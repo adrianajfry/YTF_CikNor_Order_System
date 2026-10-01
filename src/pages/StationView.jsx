@@ -19,10 +19,10 @@ export default function StationView({ stationSlug: stationSlugProp }) {
 
   useEffect(() => {
     async function init() {
-      const { data } = await supabase
-        .from('order_items')
-        .select('id, order_id, quantity, status, orders(order_number, created_at), menu_items(name)')
-        .eq('station_id', stationId)
+      const { data: station } = await supabase
+        .from('stations')
+        .select('id')
+        .eq('name', stationName)
         .single()
       if (!station) return
       setStationId(station.id)
