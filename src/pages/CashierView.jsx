@@ -5,6 +5,7 @@ import StaffHeader from '../components/StaffHeader.jsx'
 
 export default function CashierView() {
   const [lobbyOrders, setLobbyOrders] = useState([])
+  const [heldDrafts, setHeldDrafts] = useState([])
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeMode, setActiveMode] = useState(false)
   const [menuItems, setMenuItems] = useState([])
@@ -13,11 +14,43 @@ export default function CashierView() {
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
 
+  // Restore any held drafts and an in-progress draft on load (e.g. after a logout)
+  useEffect(() => {
+    try {
+      const savedHeld = localStorage.getItem('cashier_held_drafts')
+      if (savedHeld) setHeldDrafts(JSON.parse(savedHeld))
+    } catch {
+      localStorage.removeItem('cashier_held_drafts')
+    }
+    try {
+      const savedActive = localStorage.getItem('cashier_active_draft')
+      if (savedActive) {
+        const draft = JSON.parse(savedActive)
+        setSelectedOrder(draft.selectedOrder)
+        setCart(draft.cart)
+        setActiveMode(true)
+      }
+    } catch {
+      localStorage.removeItem('cashier_active_draft')
+    }
+  }, [])
+
+  // Keep the in-progress draft saved while it's active
+  useEffect(() => {
+    if (activeMode) {
+      localStorage.setItem('cashier_active_draft', JSON.stringify({ selectedOrder, cart }))
+    }
+  }, [activeMode, selectedOrder, cart])
+
+  useEffect(() => {
+    localStorage.setItem('cashier_held_drafts', JSON.stringify(heldDrafts))
+  }, [heldDrafts])
+
   useEffect(() => {
     async function loadMenu() {
       const { data } = await supabase
         .from('menu_items')
-        .select('id, name, price, available, station_id, stations!inner(name, slug), image_url')
+        .select('id, name, price, available, station_id, stations!inner(name, slug)')
         .in('stations.slug', ['beverage', 'hotfood'])
         .order('name')
       setMenuItems(data ?? [])
@@ -25,45 +58,23 @@ export default function CashierView() {
     loadMenu()
   }, [])
 
-async function loadLobby() {
-  const { data: station, error: stationError } = await supabase
-    .from('stations')
-    .select('id')
-    .eq('slug', 'ytf')
-    .single()
-  if (stationError) {
-    console.error('Could not find YTF station:', stationError)
-    return
-  }
+  async function loadLobby() {
+    const { data: station } = await supabase.from('stations').select('id').eq('slug', 'ytf').single()
+    if (!station) return
+    const { data } = await supabase
+      .from('order_items')
+      .select('order_id, orders(order_number, created_at, payment_status)')
+      .eq('station_id', station.id)
 
-  const { data: items, error: itemsError } = await supabase
-    .from('order_items')
-    .select('order_id')
-    .eq('station_id', station.id)
-  if (itemsError) {
-    console.error('Could not read order_items:', itemsError)
-    return
+    const waiting = new Map()
+    for (const row of data ?? []) {
+      const order = row.orders
+      if (order && order.payment_status === 'unpaid') {
+        waiting.set(row.order_id, { id: row.order_id, order_number: order.order_number, created_at: order.created_at })
+      }
+    }
+    setLobbyOrders([...waiting.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)))
   }
-
-  const orderIds = [...new Set((items ?? []).map((i) => i.order_id))]
-  if (orderIds.length === 0) {
-    setLobbyOrders([])
-    return
-  }
-
-  const { data: orders, error: ordersError } = await supabase
-    .from('orders')
-    .select('id, order_number, created_at, payment_status')
-    .in('id', orderIds)
-    .eq('payment_status', 'unpaid')
-    .order('created_at', { ascending: true })
-  if (ordersError) {
-    console.error('Could not read orders:', ordersError)
-    return
-  }
-
-  setLobbyOrders((orders ?? []).map((o) => ({ id: o.id, order_number: o.order_number, created_at: o.created_at })))
-}
 
   async function loadPendingRequests() {
     const { data } = await supabase.from('stock_check_requests').select('menu_item_id').is('resolved_at', null)
@@ -98,6 +109,31 @@ async function loadLobby() {
   function startNewOrder() {
     setSelectedOrder(null)
     setActiveMode(true)
+  }
+
+  function resumeDraft(draft) {
+    setHeldDrafts((prev) => prev.filter((d) => d.id !== draft.id))
+    setSelectedOrder(draft.selectedOrder)
+    setCart(draft.cart)
+    setActiveMode(true)
+  }
+
+  function backToLobby() {
+    if (cart.length > 0 || selectedOrder) {
+      const label = selectedOrder ? `#${selectedOrder.order_number}` : 'New order'
+      setHeldDrafts((prev) => [...prev, { id: crypto.randomUUID(), label, selectedOrder, cart }])
+    }
+    localStorage.removeItem('cashier_active_draft')
+    setCart([])
+    setSelectedOrder(null)
+    setActiveMode(false)
+  }
+
+  function discardDraft() {
+    localStorage.removeItem('cashier_active_draft')
+    setCart([])
+    setSelectedOrder(null)
+    setActiveMode(false)
   }
 
   function addToCart(item) {
@@ -137,85 +173,85 @@ async function loadLobby() {
   }
 
   async function completeOrder() {
-  setSubmitting(true)
-  const total = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
+    setSubmitting(true)
+    const total = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
 
-  let orderId = selectedOrder?.id
-  let orderNumber = selectedOrder?.order_number
+    let orderId = selectedOrder?.id
+    let orderNumber = selectedOrder?.order_number
 
-  if (orderId) {
-    if (cart.length > 0) {
-      const { data: existingOrder, error: fetchError } = await supabase
+    if (orderId) {
+      if (cart.length > 0) {
+        const { data: existingOrder, error: fetchError } = await supabase
+          .from('orders')
+          .select('total_amount')
+          .eq('id', orderId)
+          .single()
+        if (fetchError) {
+          alert(`Could not load order #${orderNumber}: ${fetchError.message}`)
+          setSubmitting(false)
+          return
+        }
+        const { error: totalError } = await supabase
+          .from('orders')
+          .update({ total_amount: (existingOrder?.total_amount ?? 0) + total })
+          .eq('id', orderId)
+        if (totalError) {
+          alert(`Could not update the total for #${orderNumber}: ${totalError.message}`)
+          setSubmitting(false)
+          return
+        }
+      }
+    } else {
+      orderNumber = await getNextOrderNumber(supabase)
+      const { data: order, error: orderError } = await supabase
         .from('orders')
-        .select('total_amount')
-        .eq('id', orderId)
+        .insert({ order_number: orderNumber, total_amount: total })
+        .select()
         .single()
-      if (fetchError) {
-        alert(`Could not load order #${orderNumber}: ${fetchError.message}`)
+      if (orderError) {
+        alert(`Could not create the order: ${orderError.message}`)
         setSubmitting(false)
         return
       }
-      const { error: totalError } = await supabase
-        .from('orders')
-        .update({ total_amount: (existingOrder?.total_amount ?? 0) + total })
-        .eq('id', orderId)
-      if (totalError) {
-        alert(`Could not update the total for #${orderNumber}: ${totalError.message}`)
+      orderId = order.id
+    }
+
+    if (cart.length > 0) {
+      const orderItems = cart.map((line) => ({
+        order_id: orderId,
+        menu_item_id: line.menu_item_id,
+        station_id: line.station_id,
+        quantity: line.quantity,
+        unit_price: line.price,
+      }))
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems)
+      if (itemsError) {
+        alert(`Order #${orderNumber}: the items failed to save: ${itemsError.message}`)
         setSubmitting(false)
         return
       }
     }
-  } else {
-    orderNumber = await getNextOrderNumber(supabase)
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({ order_number: orderNumber, total_amount: total })
-      .select()
-      .single()
-    if (orderError) {
-      alert(`Could not create the order: ${orderError.message}`)
+
+    const { error: payError } = await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', orderId)
+    if (payError) {
+      alert(`Order #${orderNumber}: could not mark as paid: ${payError.message}`)
       setSubmitting(false)
       return
     }
-    orderId = order.id
-  }
 
-  if (cart.length > 0) {
-    const orderItems = cart.map((line) => ({
-      order_id: orderId,
-      menu_item_id: line.menu_item_id,
-      station_id: line.station_id,
-      quantity: line.quantity,
-      unit_price: line.price,
-    }))
-    const { error: itemsError } = await supabase.from('order_items').insert(orderItems)
-    if (itemsError) {
-      alert(`Order #${orderNumber}: the items failed to save: ${itemsError.message}`)
-      setSubmitting(false)
-      return
-    }
-  }
-
-  const { error: payError } = await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', orderId)
-  if (payError) {
-    alert(`Order #${orderNumber}: could not mark as paid: ${payError.message}`)
+    localStorage.removeItem('cashier_active_draft')
+    await loadLobby()
+    setLastOrderNumber(orderNumber)
+    setCart([])
+    setSelectedOrder(null)
+    setActiveMode(false)
     setSubmitting(false)
-    return
   }
-  
-  await loadLobby()
-  setLastOrderNumber(orderNumber)
-  setCart([])
-  setSelectedOrder(null)
-  setActiveMode(false)
-  setSubmitting(false)
-}
 
   function renderMenuCard(item) {
     const isPending = pendingRequests.has(item.id)
     return (
       <div className={`menu-card ${item.available ? '' : 'unavailable'}`} key={item.id}>
-        {item.image_url && <img src={item.image_url} alt={item.name} className="menu-card-photo" />}
         <div>
           <strong>{item.name}</strong>
           <div>RM {item.price.toFixed(2)}</div>
@@ -247,7 +283,7 @@ async function loadLobby() {
       {!activeMode && (
         <>
           <h2>Waiting from YTF</h2>
-          {lobbyOrders.length === 0 && <p>No orders waiting right now.</p>}
+          {lobbyOrders.length === 0 && <p className="empty-note">No orders waiting right now.</p>}
           <div className="lobby-list">
             {lobbyOrders.map((o) => (
               <button key={o.id} className="lobby-chip" onClick={() => pickOrder(o)}>
@@ -255,6 +291,20 @@ async function loadLobby() {
               </button>
             ))}
           </div>
+
+          {heldDrafts.length > 0 && (
+            <>
+              <h2>Held orders</h2>
+              <div className="lobby-list">
+                {heldDrafts.map((draft) => (
+                  <button key={draft.id} className="lobby-chip held" onClick={() => resumeDraft(draft)}>
+                    {draft.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <button onClick={startNewOrder}>+ New order (no YTF)</button>
         </>
       )}
@@ -288,9 +338,8 @@ async function loadLobby() {
           >
             {submitting ? 'Processing…' : 'Complete order & payment'}
           </button>
-          <button onClick={() => { setActiveMode(false); setCart([]); setSelectedOrder(null) }}>
-            Cancel
-          </button>
+          <button onClick={backToLobby}>Back to lobby</button>
+          <button onClick={discardDraft}>Discard</button>
         </>
       )}
     </div>

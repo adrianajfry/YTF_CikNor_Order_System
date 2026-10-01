@@ -23,6 +23,25 @@ export default function YtfCounterView() {
     loadMenu()
   }, [])
 
+  useEffect(() => {
+    const saved = localStorage.getItem('ytf_counter_draft_cart')
+    if (saved) {
+      try {
+        setCart(JSON.parse(saved))
+      } catch {
+        localStorage.removeItem('ytf_counter_draft_cart')
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (cart.length > 0) {
+      localStorage.setItem('ytf_counter_draft_cart', JSON.stringify(cart))
+    } else {
+      localStorage.removeItem('ytf_counter_draft_cart')
+    }
+  }, [cart])
+
   function addToCart(item) {
     setCart((prev) => {
       const existing = prev.find((line) => line.menu_item_id === item.id)
