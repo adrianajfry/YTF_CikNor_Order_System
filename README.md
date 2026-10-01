@@ -56,3 +56,4 @@ Auth, the RLS policies, and the seeded menu are all real and functional. Still s
 - Order numbering is computed client-side (see the comment in `CounterView.jsx`) — move it into a Postgres function before relying on it under real concurrent traffic
 - No menu-management screen yet — add/edit menu items directly in the Supabase Table Editor, or extend `supabase/seed.sql`
 - Passwords are set once via the script — add a "change password" flow later if staff should be able to update their own
+test deploy
