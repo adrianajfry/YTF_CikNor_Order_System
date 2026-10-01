@@ -1,0 +1,40 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #f7f6f2; color: #222; }
+.app-nav { display: flex; gap: 16px; padding: 12px 20px; background: #222; }
+.app-nav a { color: #fff; text-decoration: none; font-size: 14px; }
+.view { padding: 24px; max-width: 720px; margin: 0 auto; }
+.menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.menu-card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; display: flex; flex-direction: column; gap: 8px; }
+.menu-card.unavailable { opacity: 0.5; }
+.menu-card-actions { display: flex; gap: 8px; }
+.banner { background: #fff3cd; border: 1px solid #ffe58f; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+.banner-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ticket-groups { display: flex; flex-direction: column; gap: 14px; }
+.ticket-group { border: 2px solid #ccc; border-radius: 10px; padding: 12px 16px; background: #fafafa; }
+.ticket-group-header { font-weight: bold; font-size: 18px; margin-bottom: 8px; }
+.ticket-list { list-style: none; padding: 0; margin: 0; }
+.ticket { border-left: 4px solid #ccc; padding: 8px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 4px; }
+.ticket-ready { border-left-color: #1d9e75; }
+.board { display: flex; gap: 32px; padding: 40px; }
+.board-column { flex: 1; }
+.board-numbers { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.board-chip { font-size: 28px; font-weight: bold; border: 2px solid #888; border-radius: 8px; padding: 12px 20px; background: #fff; }
+.board-chip.ready { border-color: #1d9e75; color: #0f6e56; }
+.board-chip.recalled { background: #ffe0e0; border-color: #e24b4a; color: #a32d2d; }
+.pickup-lookup { display: flex; gap: 8px; margin-bottom: 16px; }
+.staff-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: #222; color: #fff; margin: -24px -24px 24px -24px; }
+.staff-header button { background: none; border: 1px solid #fff; color: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.login-view { max-width: 320px; margin-top: 80px; text-align: center; }
+.login-view form { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+.login-view input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+.login-error { color: #c0392b; }
+.order-number-banner { background: #e6f4ea; border: 1px solid #34a853; color: #1e7e34; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-weight: bold; }
+.ytf-question, .open-orders { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.open-orders button { font-size: 18px; padding: 8px 16px; }
+.menu-card-photo { width: 100%; height: 90px; object-fit: cover; border-radius: 6px; }
+.lobby-list { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 20px; }
+.lobby-chip { font-size: 20px; padding: 10px 18px; border-radius: 8px; border: 2px solid #888; background: #fff; cursor: pointer; }
+.cart-list li { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pending-note { font-size: 12px; color: #888; font-style: italic; }
+.staff-role-tag { font-size: 12px; opacity: 0.8; }
+.empty-note { font-style: italic; color: #999; padding: 12px 0; }
+.pickup-board { display: flex; gap: 40px; margin: 16px 0 24px; }
