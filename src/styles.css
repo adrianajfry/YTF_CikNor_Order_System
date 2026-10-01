@@ -23,7 +23,17 @@ body { font-family: system-ui, sans-serif; margin: 0; background: #f7f6f2; color
 .pickup-lookup { display: flex; gap: 8px; margin-bottom: 16px; }
 .staff-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: #222; color: #fff; margin: -24px -24px 24px -24px; }
 .staff-header button { background: none; border: 1px solid #fff; color: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-.login-view { max-width: 320px; margin-top: 80px; text-align: center; }
+.login-view {
+  max-width: 320px;
+  margin: 0 auto;
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
 .login-view form { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 .login-view input { padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
 .login-error { color: #c0392b; }
@@ -38,3 +48,7 @@ body { font-family: system-ui, sans-serif; margin: 0; background: #f7f6f2; color
 .staff-role-tag { font-size: 12px; opacity: 0.8; }
 .empty-note { font-style: italic; color: #999; padding: 12px 0; }
 .pickup-board { display: flex; gap: 40px; margin: 16px 0 24px; }
+.login-logo { width: 190px; height: 150px; object-fit: contain; margin-bottom: 8px; }
+.login-restaurant-name { font-size: 28px; margin-bottom: 8px; }
+.login-address, .login-hours { font-size: 13px; color: #555; margin: 4px 0; }
+.login-hours-note { font-style: italic; color: #888; }
