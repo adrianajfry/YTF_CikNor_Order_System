@@ -33,7 +33,7 @@ export default function BoardView() {
         <h2>Preparing</h2>
         <div className="board-numbers">
           {preparing.map((o) => (
-            <span key={o.id} className="board-chip">{o.order_number}</span>
+            <span key={o.id} className={`board-chip ${o.recalled_at ? 'recalled' : ''}`}>{o.order_number}</span>
           ))}
         </div>
       </div>

@@ -90,7 +90,11 @@ export default function PickupView() {
           <div className="lobby-list">
             {preparing.length === 0 && <p className="empty-note">Nothing preparing right now.</p>}
             {preparing.map((o) => (
-              <button key={o.id} className="board-chip" onClick={() => selectOrder(o)}>
+              <button
+                key={o.id}
+                className={`board-chip ${o.recalled_at ? 'recalled' : ''}`}
+                onClick={() => selectOrder(o)}
+              >
                 {o.order_number}
               </button>
             ))}
