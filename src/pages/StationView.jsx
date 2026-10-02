@@ -16,6 +16,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
   const [stationId, setStationId] = useState(null)
   const [items, setItems] = useState([])
   const [requests, setRequests] = useState([])
+    const [loadingItems, setLoadingItems] = useState(true)
 
   useEffect(() => {
     async function init() {
@@ -41,6 +42,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
         .in('status', ['queued', 'cooking', 'ready'])
         .order('status_updated_at')
       setItems(data ?? [])
+      setLoadingItems(false)
     }
     async function loadRequests() {
       const { data } = await supabase
@@ -113,7 +115,13 @@ export default function StationView({ stationSlug: stationSlugProp }) {
         </div>
       )}
 
-      {(() => {
+      {loadingItems ? (
+        <div className="ticket-groups">
+          <div className="skeleton-card" />
+          <div className="skeleton-card" />
+        </div>
+      ) : (
+        (() => {
         const groups = {}
         for (const item of items) {
           const key = item.order_id
@@ -156,7 +164,8 @@ export default function StationView({ stationSlug: stationSlugProp }) {
             ))}
           </div>
         )
-      })()}
+      })()
+      )}
     </div>
   )
 }

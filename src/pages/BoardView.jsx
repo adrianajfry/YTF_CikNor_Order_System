@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient.js'
 
 export default function BoardView() {
   const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadBoard() {
@@ -13,6 +14,7 @@ export default function BoardView() {
         .order('recalled_at', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true })
       setOrders(data ?? [])
+      setLoading(false)
     }
     loadBoard()
 
@@ -32,19 +34,30 @@ export default function BoardView() {
       <div className="board-column">
         <h2>Preparing</h2>
         <div className="board-numbers">
-          {preparing.map((o) => (
-            <span key={o.id} className={`board-chip ${o.recalled_at ? 'recalled' : ''}`}>{o.order_number}</span>
-          ))}
+          {loading ? (
+            <>
+              <span className="skeleton-chip" />
+              <span className="skeleton-chip" />
+            </>
+          ) : (
+            preparing.map((o) => (
+              <span key={o.id} className={`board-chip ${o.recalled_at ? 'recalled' : ''}`}>{o.order_number}</span>
+            ))
+          )}
         </div>
       </div>
       <div className="board-column">
         <h2>Ready for pickup</h2>
         <div className="board-numbers">
-          {ready.map((o) => (
-            <span key={o.id} className={`board-chip ready ${o.recalled_at ? 'recalled' : ''}`}>
-              {o.order_number}
-            </span>
-          ))}
+          {loading ? (
+            <span className="skeleton-chip" />
+          ) : (
+            ready.map((o) => (
+              <span key={o.id} className={`board-chip ready ${o.recalled_at ? 'recalled' : ''}`}>
+                {o.order_number}
+              </span>
+            ))
+          )}
         </div>
       </div>
     </div>
