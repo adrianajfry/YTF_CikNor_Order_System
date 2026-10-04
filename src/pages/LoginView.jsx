@@ -66,7 +66,9 @@ export default function LoginView() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.25 }}
           >
-            <h1>Staff login</h1>
+            <img src="/logo.png" alt="Yong Cik Nor Tau Foo" className="login-logo" />
+            <h1>Yong Cik Nor Tau Foo</h1>
+            <p className="login-subtitle">AU3 Keramat — Staff login</p>
             <form onSubmit={handleSubmit}>
               <input
                 placeholder="Username"
