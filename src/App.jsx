@@ -9,6 +9,7 @@ import BoardView from './pages/BoardView.jsx'
 import PickupView from './pages/PickupView.jsx'
 import OrderHistoryView from './pages/OrderHistoryView.jsx'
 import CustomerDisplayView from './pages/CustomerDisplayView.jsx'
+import CameraBroadcastView from './pages/CameraBroadcastView.jsx'
 
 export default function App() {
   return (
@@ -90,6 +91,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRole="hotfood">
                 <OrderHistoryView stationSlug="hotfood" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/camera/ytf"
+            element={
+              <ProtectedRoute allowedRole="ytf_camera">
+                <CameraBroadcastView />
               </ProtectedRoute>
             }
           />

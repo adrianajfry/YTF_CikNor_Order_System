@@ -147,3 +147,6 @@ button:disabled {
 .customer-display-qr { text-align: center; }
 .customer-display-qr img { border-radius: 12px; }
 .counter-camera { margin-bottom: 20px; border-radius: 10px; overflow: hidden; }
+.counter-camera-title { font-size: 16px; margin-bottom: 8px; }
+.camera-preview { width: 100%; border-radius: 10px; background: #000; min-height: 160px; }
+.camera-status-note { font-style: italic; color: #999; margin-top: 6px; }

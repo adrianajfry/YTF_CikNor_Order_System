@@ -10,6 +10,7 @@ const ROLE_TO_PATH = {
   beverage: '/station/beverage',
   hotfood: '/station/hotfood',
   pickup: '/pickup',
+  ytf_camera: '/camera/ytf',
 }
 
 export default function LoginView() {

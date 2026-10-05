@@ -30,6 +30,7 @@ const accounts = [
   { username: 'beverage', password: 'ciknor_drink', role: 'beverage', display_name: 'Beverage station' },
   { username: 'hotfood',  password: 'ciknor_food', role: 'hotfood',  display_name: 'Hot food station' },
   { username: 'pickup',   password: 'ciknor_pickup', role: 'pickup',   display_name: 'Pickup counter' },
+  { username: 'ytf_camera', password: 'ciknor_camera', role: 'ytf_camera', display_name: 'YTF camera' },
 ]
 
 for (const account of accounts) {

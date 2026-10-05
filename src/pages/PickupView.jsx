@@ -70,6 +70,7 @@ export default function PickupView() {
       .from('order_items')
       .update({ status: 'picked_up', status_updated_at: new Date().toISOString() })
       .eq('id', item.id)
+  }
 
   async function recallOrder() {
     if (!selected) return
@@ -142,5 +143,4 @@ export default function PickupView() {
       )}
     </div>
   )
-}
 }
