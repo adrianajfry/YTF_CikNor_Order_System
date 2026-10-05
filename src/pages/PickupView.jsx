@@ -66,9 +66,10 @@ export default function PickupView() {
   }
 
   async function markPickedUp(item) {
-    await supabase.from('order_items').update({ status: 'picked_up' }).eq('id', item.id)
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'picked_up' } : i)))
-  }
+    await supabase
+      .from('order_items')
+      .update({ status: 'picked_up', status_updated_at: new Date().toISOString() })
+      .eq('id', item.id)
 
   async function recallOrder() {
     if (!selected) return
@@ -141,4 +142,5 @@ export default function PickupView() {
       )}
     </div>
   )
+}
 }

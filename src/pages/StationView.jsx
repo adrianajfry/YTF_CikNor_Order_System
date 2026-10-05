@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import StaffHeader from '../components/StaffHeader.jsx'
-
-const SLUG_TO_STATION_NAME = {
-  ytf: 'Yong Tau Foo',
-  beverage: 'Beverage',
-  hotfood: 'Hot Food',
-}
+import { SLUG_TO_STATION_NAME } from '../lib/stationNames.js'
 
 export default function StationView({ stationSlug: stationSlugProp }) {
   const params = useParams()
@@ -16,7 +11,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
   const [stationId, setStationId] = useState(null)
   const [items, setItems] = useState([])
   const [requests, setRequests] = useState([])
-    const [loadingItems, setLoadingItems] = useState(true)
+  const [loadingItems, setLoadingItems] = useState(true)
 
   useEffect(() => {
     async function init() {
@@ -31,53 +26,66 @@ export default function StationView({ stationSlug: stationSlugProp }) {
     init()
   }, [stationName])
 
+  async function loadItems(id) {
+    if (!id) return
+    const { data } = await supabase
+      .from('order_items')
+      .select('id, order_id, quantity, status, orders(order_number, created_at), menu_items(name)')
+      .eq('station_id', id)
+      .in('status', ['queued', 'cooking'])
+      .order('status_updated_at')
+    setItems(data ?? [])
+    setLoadingItems(false)
+  }
+
+  async function loadRequests(id) {
+    if (!id) return
+    const { data } = await supabase
+      .from('stock_check_requests')
+      .select('id, menu_items(name)')
+      .eq('station_id', id)
+      .is('resolved_at', null)
+    setRequests(data ?? [])
+  }
+
   useEffect(() => {
     if (!stationId) return
 
-    async function loadItems() {
-      const { data } = await supabase
-        .from('order_items')
-        .select('id, quantity, status, orders(order_number), menu_items(name)')
-        .eq('station_id', stationId)
-        .in('status', ['queued', 'cooking', 'ready'])
-        .order('status_updated_at')
-      setItems(data ?? [])
-      setLoadingItems(false)
-    }
-    async function loadRequests() {
-      const { data } = await supabase
-        .from('stock_check_requests')
-        .select('id, menu_items(name)')
-        .eq('station_id', stationId)
-        .is('resolved_at', null)
-      setRequests(data ?? [])
-    }
-    loadItems()
-    loadRequests()
+    loadItems(stationId)
+    loadRequests(stationId)
 
     const channel = supabase
       .channel(`station-${stationId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'order_items', filter: `station_id=eq.${stationId}` },
-        loadItems
+        () => loadItems(stationId)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'stock_check_requests', filter: `station_id=eq.${stationId}` },
-        loadRequests
+        () => loadRequests(stationId)
       )
       .subscribe()
 
     return () => supabase.removeChannel(channel)
   }, [stationId])
 
-  async function advanceStatus(item) {
-    const next = item.status === 'queued' ? 'cooking' : 'ready'
-    await supabase
+  async function markOrderReady(group) {
+    const idsToUpdate = group.items.filter((item) => item.status !== 'ready').map((item) => item.id)
+    if (idsToUpdate.length === 0) return
+
+    const { error } = await supabase
       .from('order_items')
-      .update({ status: next, status_updated_at: new Date().toISOString() })
-      .eq('id', item.id)
+      .update({ status: 'ready', status_updated_at: new Date().toISOString() })
+      .in('id', idsToUpdate)
+
+    if (error) {
+      alert(`Could not update order #${group.orderNumber}: ${error.message}`)
+      return
+    }
+
+    loadItems(stationId)
   }
 
   async function resolveRequest(request, response) {
@@ -86,7 +94,6 @@ export default function StationView({ stationSlug: stationSlugProp }) {
       .update({ resolved_at: new Date().toISOString(), response })
       .eq('id', request.id)
     if (response === 'unavailable') {
-      // Also flip the menu item off for future orders.
       const { data: reqRow } = await supabase
         .from('stock_check_requests')
         .select('menu_item_id')
@@ -96,12 +103,31 @@ export default function StationView({ stationSlug: stationSlugProp }) {
         await supabase.from('menu_items').update({ available: false }).eq('id', reqRow.menu_item_id)
       }
     }
+    loadRequests(stationId)
   }
+
+  const groups = {}
+  for (const item of items) {
+    const key = item.order_id
+    if (!groups[key]) {
+      groups[key] = {
+        orderId: key,
+        orderNumber: item.orders?.order_number,
+        createdAt: item.orders?.created_at,
+        items: [],
+      }
+    }
+    groups[key].items.push(item)
+  }
+  const orderGroups = Object.values(groups).sort(
+    (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+  )
 
   return (
     <div className="view">
       <StaffHeader title={`${stationName} station`} />
       <h1>{stationName} station</h1>
+      <Link to={`/station/${stationSlug}/history`} className="history-link">View order history →</Link>
 
       {requests.length > 0 && (
         <div className="banner">
@@ -120,51 +146,35 @@ export default function StationView({ stationSlug: stationSlugProp }) {
           <div className="skeleton-card" />
           <div className="skeleton-card" />
         </div>
+      ) : orderGroups.length === 0 ? (
+        <p className="empty-note">No orders waiting right now — you're all caught up.</p>
       ) : (
-        (() => {
-        const groups = {}
-        for (const item of items) {
-          const key = item.order_id
-          if (!groups[key]) {
-            groups[key] = {
-              orderId: key,
-              orderNumber: item.orders?.order_number,
-              createdAt: item.orders?.created_at,
-              items: [],
-            }
-          }
-          groups[key].items.push(item)
-        }
-        const orderGroups = Object.values(groups).sort(
-          (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-        )
+        <div className="ticket-groups">
+          {orderGroups.map((group) => {
+            const allReady = group.items.every((item) => item.status === 'ready')
 
-        if (orderGroups.length === 0) {
-          return <p className="empty-note">No orders waiting right now — you're all caught up.</p>
-        }
-
-        return (
-          <div className="ticket-groups">
-            {orderGroups.map((group) => (
+            return (
               <div key={group.orderId} className="ticket-group">
-                <div className="ticket-group-header">Order #{group.orderNumber}</div>
+                <label className="order-ready-check">
+                  <input
+                    type="checkbox"
+                    checked={allReady}
+                    disabled={allReady}
+                    onChange={() => markOrderReady(group)}
+                  />
+                  Order #{group.orderNumber}
+                </label>
                 <ul className="ticket-list">
                   {group.items.map((item) => (
                     <li key={item.id} className={`ticket ticket-${item.status}`}>
-                      {item.quantity} x {item.menu_items?.name} ({item.status})
-                      {item.status !== 'ready' && (
-                        <button onClick={() => advanceStatus(item)}>
-                          Mark {item.status === 'queued' ? 'cooking' : 'ready'}
-                        </button>
-                      )}
+                      {item.quantity} x {item.menu_items?.name}
                     </li>
                   ))}
                 </ul>
               </div>
-            ))}
-          </div>
-        )
-      })()
+            )
+          })}
+        </div>
       )}
     </div>
   )

@@ -68,7 +68,9 @@ export default function LoginView() {
           >
             <img src="/logo.png" alt="Yong Cik Nor Tau Foo" className="login-logo" />
             <h1>Yong Cik Nor Tau Foo</h1>
-            <p className="login-subtitle">AU3 Keramat — Staff login</p>
+            <p className="login-subtitle">Kelumpuk Camar Block C, AU 3, 54200 Kuala Lumpur</p>
+            <p className="login-subtitle">Setiap Hari: 2:00 PM – 12:00 AM, Hari Jumaat: Buka bermula jam 2:30 PM</p>
+            <h3>Staff login</h3>
             <form onSubmit={handleSubmit}>
               <input
                 placeholder="Username"

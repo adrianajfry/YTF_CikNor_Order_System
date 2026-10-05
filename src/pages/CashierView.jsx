@@ -8,13 +8,13 @@ export default function CashierView() {
   const [heldDrafts, setHeldDrafts] = useState([])
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeMode, setActiveMode] = useState(false)
+  const [paymentStage, setPaymentStage] = useState('building') // 'building' | 'awaiting_payment'
   const [menuItems, setMenuItems] = useState([])
   const [pendingRequests, setPendingRequests] = useState(new Set())
   const [cart, setCart] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
 
-  // Restore any held drafts and an in-progress draft on load (e.g. after a logout)
   useEffect(() => {
     try {
       const savedHeld = localStorage.getItem('cashier_held_drafts')
@@ -35,12 +35,11 @@ export default function CashierView() {
     }
   }, [])
 
-  // Keep the in-progress draft saved while it's active
   useEffect(() => {
-    if (activeMode) {
+    if (activeMode && paymentStage === 'building') {
       localStorage.setItem('cashier_active_draft', JSON.stringify({ selectedOrder, cart }))
     }
-  }, [activeMode, selectedOrder, cart])
+  }, [activeMode, paymentStage, selectedOrder, cart])
 
   useEffect(() => {
     localStorage.setItem('cashier_held_drafts', JSON.stringify(heldDrafts))
@@ -104,11 +103,13 @@ export default function CashierView() {
   function pickOrder(order) {
     setSelectedOrder(order)
     setActiveMode(true)
+    setPaymentStage('building')
   }
 
   function startNewOrder() {
     setSelectedOrder(null)
     setActiveMode(true)
+    setPaymentStage('building')
   }
 
   function resumeDraft(draft) {
@@ -116,6 +117,7 @@ export default function CashierView() {
     setSelectedOrder(draft.selectedOrder)
     setCart(draft.cart)
     setActiveMode(true)
+    setPaymentStage('building')
   }
 
   function backToLobby() {
@@ -172,9 +174,35 @@ export default function CashierView() {
     setPendingRequests((prev) => new Set(prev).add(item.id))
   }
 
-  async function completeOrder() {
+  const total = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
+  const orderLabel = selectedOrder ? `Order #${selectedOrder.order_number}` : 'New order'
+
+  async function proceedToPayment() {
+    if (!selectedOrder && cart.length === 0) return
+    const { error } = await supabase
+      .from('checkout_sessions')
+      .update({
+        order_label: orderLabel,
+        items: cart.map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
+        total,
+        status: 'awaiting_payment',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', 'current')
+    if (error) {
+      alert(`Could not start payment: ${error.message}`)
+      return
+    }
+    setPaymentStage('awaiting_payment')
+  }
+
+  async function cancelPayment() {
+    await supabase.from('checkout_sessions').update({ status: 'idle' }).eq('id', 'current')
+    setPaymentStage('building')
+  }
+
+  async function submitOrder() {
     setSubmitting(true)
-    const total = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
 
     let orderId = selectedOrder?.id
     let orderNumber = selectedOrder?.order_number
@@ -239,12 +267,14 @@ export default function CashierView() {
       return
     }
 
+    await supabase.from('checkout_sessions').update({ status: 'idle' }).eq('id', 'current')
     localStorage.removeItem('cashier_active_draft')
     await loadLobby()
     setLastOrderNumber(orderNumber)
     setCart([])
     setSelectedOrder(null)
     setActiveMode(false)
+    setPaymentStage('building')
     setSubmitting(false)
   }
 
@@ -309,9 +339,9 @@ export default function CashierView() {
         </>
       )}
 
-      {activeMode && (
+      {activeMode && paymentStage === 'building' && (
         <>
-          <p>{selectedOrder ? `Adding to order #${selectedOrder.order_number}` : 'New order'}</p>
+          <p>{orderLabel}</p>
 
           <h2>Hot food</h2>
           <div className="menu-grid">{hotFoodItems.map(renderMenuCard)}</div>
@@ -333,14 +363,46 @@ export default function CashierView() {
           </ul>
 
           <button
-            disabled={submitting || (!selectedOrder && cart.length === 0)}
-            onClick={completeOrder}
+            className="btn-primary"
+            disabled={!selectedOrder && cart.length === 0}
+            onClick={proceedToPayment}
           >
-            {submitting ? 'Processing…' : 'Complete order & payment'}
+            Proceed with payment
           </button>
           <button onClick={backToLobby}>Back to lobby</button>
-          <button onClick={discardDraft}>Discard</button>
+          <button className="btn-danger" onClick={discardDraft}>Discard</button>
         </>
+      )}
+
+      {activeMode && paymentStage === 'awaiting_payment' && (
+        <div className="payment-review">
+          <div className="payment-summary">
+            <h2>{orderLabel}</h2>
+            <ul>
+              {cart.map((line) => (
+                <li key={line.menu_item_id}>
+                  {line.quantity} x {line.name} — RM {(line.price * line.quantity).toFixed(2)}
+                </li>
+              ))}
+            </ul>
+            <div className="payment-total">Total: RM {total.toFixed(2)}</div>
+          </div>
+          <div className="payment-qr">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                `DEMO PAYMENT - ${orderLabel} - Total RM${total.toFixed(2)}`
+              )}`}
+              alt="Scan to pay"
+            />
+            <p>Waiting for customer to pay…</p>
+          </div>
+          <div className="payment-actions">
+            <button className="btn-primary" disabled={submitting} onClick={submitOrder}>
+              {submitting ? 'Sending…' : 'Submit order'}
+            </button>
+            <button onClick={cancelPayment}>Cancel</button>
+          </div>
+        </div>
       )}
     </div>
   )

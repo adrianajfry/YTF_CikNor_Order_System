@@ -107,6 +107,16 @@ export default function YtfCounterView() {
     <div className="view">
       <StaffHeader title="YTF counter" />
       <h1>YTF counter</h1>
+      <div className="counter-camera">
+        <iframe
+          width="100%"
+          height="220"
+          src="https://www.youtube.com/embed/jfKfPfyJRdk"
+          title="YTF counter camera (dummy)"
+          allow="autoplay"
+          frameBorder="0"
+        />
+      </div>
 
       {lastOrderNumber && (
         <div className="order-number-banner">
@@ -141,7 +151,7 @@ export default function YtfCounterView() {
         ))}
       </ul>
       <button onClick={() => setCart([])}>Clear order</button>
-      <button disabled={submitting || cart.length === 0} onClick={submitOrder}>
+      <button className="btn-primary" disabled={submitting || cart.length === 0} onClick={submitOrder}>
         {submitting ? 'Sending…' : 'Send to cashier'}
       </button>
     </div>

@@ -7,6 +7,8 @@ import CashierView from './pages/CashierView.jsx'
 import StationView from './pages/StationView.jsx'
 import BoardView from './pages/BoardView.jsx'
 import PickupView from './pages/PickupView.jsx'
+import OrderHistoryView from './pages/OrderHistoryView.jsx'
+import CustomerDisplayView from './pages/CustomerDisplayView.jsx'
 
 export default function App() {
   return (
@@ -15,7 +17,7 @@ export default function App() {
         <Routes>
           {/* Public: the customer-facing status board, no login needed */}
           <Route path="/board" element={<BoardView />} />
-
+          <Route path="/customer-display" element={<CustomerDisplayView />} />
           <Route path="/login" element={<LoginView />} />
 
           {/* Each of these only renders for the matching staff account */}
@@ -64,6 +66,30 @@ export default function App() {
             element={
               <ProtectedRoute allowedRole="pickup">
                 <PickupView />
+              </ProtectedRoute>
+            }
+          />
+                    <Route
+            path="/station/ytf/history"
+            element={
+              <ProtectedRoute allowedRole="ytf">
+                <OrderHistoryView stationSlug="ytf" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/station/beverage/history"
+            element={
+              <ProtectedRoute allowedRole="beverage">
+                <OrderHistoryView stationSlug="beverage" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/station/hotfood/history"
+            element={
+              <ProtectedRoute allowedRole="hotfood">
+                <OrderHistoryView stationSlug="hotfood" />
               </ProtectedRoute>
             }
           />
