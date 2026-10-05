@@ -27,11 +27,11 @@ export default function YtfCounterView() {
     })
 
     peer.on('error', (err) => {
-      if (err.type !== 'unavailable-id') {
-        console.error(err)
-        setCameraStatus('error')
-      }
+      console.error('Counter peer error:', err.type, err)
+      setCameraStatus('error')
     })
+
+    peer.on('open', (id) => console.log('Counter peer registered as:', id))
 
     return () => peer.destroy()
   }, [])

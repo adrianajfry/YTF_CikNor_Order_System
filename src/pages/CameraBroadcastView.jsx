@@ -28,10 +28,12 @@ export default function CameraBroadcastView() {
           if (call) setStatus('streaming')
         })
         peer.on('error', (err) => {
-          console.error(err)
+          console.error('Camera peer error:', err.type, err)
           setStatus('error')
-          setErrorMessage(err.message || 'Connection error')
+          setErrorMessage(`${err.type}: ${err.message || 'Connection error'}`)
         })
+
+        peer.on('open', (id) => console.log('Camera peer opened, ready to call:', id))
       } catch (err) {
         console.error(err)
         setStatus('error')
