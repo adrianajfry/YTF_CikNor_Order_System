@@ -1,56 +1,19 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient.js'
 import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
-import { Peer } from 'peerjs'
-import { PEER_ICE_CONFIG } from '../lib/peerConfig.js'
 
 export default function YtfCounterView() {
   const [menuItems, setMenuItems] = useState([])
   const [cart, setCart] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
-  const VIEWER_PEER_ID = 'ytf-counter-viewer'
-  const cameraVideoRef = useRef(null)
-  const [cameraStatus, setCameraStatus] = useState('waiting') // waiting | connected | error
+  const SNAPSHOT_URL = supabase.storage.from('camera-snapshots').getPublicUrl('ytf-live.jpg').data.publicUrl
+  const [cameraTick, setCameraTick] = useState(0)
 
   useEffect(() => {
-      const peer = new Peer(VIEWER_PEER_ID, PEER_ICE_CONFIG)
-
-    peer.on('call', (call) => {
-      console.log('Counter: incoming call from', call.peer)
-      call.answer() // we're just viewing, nothing to send back
-
-      call.on('stream', (remoteStream) => {
-        console.log('Counter: stream received')
-        if (cameraVideoRef.current) cameraVideoRef.current.srcObject = remoteStream
-        setCameraStatus('connected')
-      })
-      call.on('close', () => {
-        console.log('Counter: call closed')
-        setCameraStatus('waiting')
-      })
-      call.on('error', (err) => console.error('Counter: call error', err))
-
-      const pc = call.peerConnection
-      if (pc) {
-        pc.addEventListener('iceconnectionstatechange', () =>
-          console.log('Counter ICE state:', pc.iceConnectionState)
-        )
-        pc.addEventListener('icecandidate', (e) =>
-          console.log('Counter ICE candidate:', e.candidate ? e.candidate.type : '(end of candidates)')
-        )
-      }
-    })
-
-    peer.on('error', (err) => {
-      console.error('Counter peer error:', err.type, err)
-      setCameraStatus('error')
-    })
-
-    peer.on('open', (id) => console.log('Counter peer registered as:', id))
-
-    return () => peer.destroy()
+    const intervalId = setInterval(() => setCameraTick((t) => t + 1), 2000)
+    return () => clearInterval(intervalId)
   }, [])
 
   useEffect(() => {
@@ -153,12 +116,12 @@ export default function YtfCounterView() {
       <h1>YTF counter</h1>
       <div className="counter-camera">
         <h2 className="counter-camera-title">Live streaming of YTF food</h2>
-        <video ref={cameraVideoRef} autoPlay playsInline className="camera-preview" />
-        {cameraStatus !== 'connected' && (
-          <p className="camera-status-note">
-            {cameraStatus === 'error' ? 'Camera connection error.' : 'Waiting for the camera to connect…'}
-          </p>
-        )}
+        <img
+          src={`${SNAPSHOT_URL}?t=${cameraTick}`}
+          alt="YTF counter camera"
+          className="camera-preview"
+        />
+        <p className="camera-status-note">Updates every 2 seconds.</p>
       </div>
 
       {lastOrderNumber && (

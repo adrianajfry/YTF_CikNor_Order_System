@@ -1,20 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
-import { Peer } from 'peerjs'
-import { PEER_ICE_CONFIG } from '../lib/peerConfig.js'
+import { supabase } from '../lib/supabaseClient.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import StaffHeader from '../components/StaffHeader.jsx'
 
-const VIEWER_PEER_ID = 'ytf-counter-viewer'
+const SNAPSHOT_PATH = 'ytf-live.jpg'
+const CAPTURE_INTERVAL_MS = 2000
 
 export default function CameraBroadcastView() {
   const { logout } = useAuth()
   const videoRef = useRef(null)
-  const [status, setStatus] = useState('starting') // starting | calling | streaming | error
+  const canvasRef = useRef(document.createElement('canvas'))
+  const [status, setStatus] = useState('starting') // starting | live | error
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    let peer
     let stream
+    let intervalId
+
+    async function captureAndUpload() {
+      const video = videoRef.current
+      if (!video || video.videoWidth === 0) return
+
+      const canvas = canvasRef.current
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      canvas.getContext('2d').drawImage(video, 0, 0)
+
+      canvas.toBlob(
+        async (blob) => {
+          if (!blob) return
+          const { error } = await supabase.storage
+            .from('camera-snapshots')
+            .upload(SNAPSHOT_PATH, blob, { upsert: true, contentType: 'image/jpeg' })
+          if (error) console.error('Snapshot upload failed:', error)
+        },
+        'image/jpeg',
+        0.7
+      )
+    }
 
     async function start() {
       try {
@@ -23,56 +46,8 @@ export default function CameraBroadcastView() {
           audio: false,
         })
         if (videoRef.current) videoRef.current.srcObject = stream
-
-        peer = new Peer(PEER_ICE_CONFIG)
-
-        peer.on('open', (id) => {
-          console.log('Camera peer opened:', id)
-          setStatus('calling')
-          const call = peer.call(VIEWER_PEER_ID, stream)
-
-          if (!call) {
-            setStatus('error')
-            setErrorMessage('Could not start a call to the counter screen.')
-            return
-          }
-
-          call.on('error', (err) => {
-            console.error('Call error:', err)
-            setStatus('error')
-            setErrorMessage(err.message || 'Call error')
-          })
-          call.on('close', () => {
-            setStatus('error')
-            setErrorMessage('Connection closed.')
-          })
-
-        const watchConnection = () => {
-            const pc = call.peerConnection
-            if (!pc) return
-            pc.addEventListener('connectionstatechange', () => {
-              console.log('Camera connection state:', pc.connectionState)
-              if (pc.connectionState === 'connected') setStatus('streaming')
-              if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                setStatus('error')
-                setErrorMessage(`Connection ${pc.connectionState}.`)
-              }
-            })
-            pc.addEventListener('iceconnectionstatechange', () =>
-              console.log('Camera ICE state:', pc.iceConnectionState)
-            )
-            pc.addEventListener('icecandidate', (e) =>
-              console.log('Camera ICE candidate:', e.candidate ? e.candidate.type : '(end of candidates)')
-            )
-          }
-          watchConnection()
-        })
-
-        peer.on('error', (err) => {
-          console.error('Camera peer error:', err.type, err)
-          setStatus('error')
-          setErrorMessage(`${err.type}: ${err.message || 'Connection error'}`)
-        })
+        setStatus('live')
+        intervalId = setInterval(captureAndUpload, CAPTURE_INTERVAL_MS)
       } catch (err) {
         console.error(err)
         setStatus('error')
@@ -83,7 +58,7 @@ export default function CameraBroadcastView() {
 
     return () => {
       if (stream) stream.getTracks().forEach((track) => track.stop())
-      if (peer) peer.destroy()
+      if (intervalId) clearInterval(intervalId)
     }
   }, [])
 
@@ -93,9 +68,8 @@ export default function CameraBroadcastView() {
       <h1>YTF camera</h1>
       <p>
         {status === 'starting' && 'Starting camera…'}
-        {status === 'calling' && 'Connecting to the counter screen…'}
-        {status === 'streaming' && 'Connected — streaming live.'}
-        {status === 'error' && `Could not connect: ${errorMessage}`}
+        {status === 'live' && 'Sending a photo every 2 seconds to the counter screen.'}
+        {status === 'error' && `Could not start: ${errorMessage}`}
       </p>
       <video ref={videoRef} autoPlay playsInline muted className="camera-preview" />
       <button
