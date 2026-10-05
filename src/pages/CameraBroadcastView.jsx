@@ -47,17 +47,23 @@ export default function CameraBroadcastView() {
             setErrorMessage('Connection closed.')
           })
 
-          const watchConnection = () => {
+        const watchConnection = () => {
             const pc = call.peerConnection
             if (!pc) return
             pc.addEventListener('connectionstatechange', () => {
-              console.log('Call connection state:', pc.connectionState)
+              console.log('Camera connection state:', pc.connectionState)
               if (pc.connectionState === 'connected') setStatus('streaming')
               if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
                 setStatus('error')
                 setErrorMessage(`Connection ${pc.connectionState}.`)
               }
             })
+            pc.addEventListener('iceconnectionstatechange', () =>
+              console.log('Camera ICE state:', pc.iceConnectionState)
+            )
+            pc.addEventListener('icecandidate', (e) =>
+              console.log('Camera ICE candidate:', e.candidate ? e.candidate.type : '(end of candidates)')
+            )
           }
           watchConnection()
         })

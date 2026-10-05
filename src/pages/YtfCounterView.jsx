@@ -18,12 +18,29 @@ export default function YtfCounterView() {
       const peer = new Peer(VIEWER_PEER_ID, PEER_ICE_CONFIG)
 
     peer.on('call', (call) => {
+      console.log('Counter: incoming call from', call.peer)
       call.answer() // we're just viewing, nothing to send back
+
       call.on('stream', (remoteStream) => {
+        console.log('Counter: stream received')
         if (cameraVideoRef.current) cameraVideoRef.current.srcObject = remoteStream
         setCameraStatus('connected')
       })
-      call.on('close', () => setCameraStatus('waiting'))
+      call.on('close', () => {
+        console.log('Counter: call closed')
+        setCameraStatus('waiting')
+      })
+      call.on('error', (err) => console.error('Counter: call error', err))
+
+      const pc = call.peerConnection
+      if (pc) {
+        pc.addEventListener('iceconnectionstatechange', () =>
+          console.log('Counter ICE state:', pc.iceConnectionState)
+        )
+        pc.addEventListener('icecandidate', (e) =>
+          console.log('Counter ICE candidate:', e.candidate ? e.candidate.type : '(end of candidates)')
+        )
+      }
     })
 
     peer.on('error', (err) => {
