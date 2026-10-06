@@ -10,6 +10,7 @@ import PickupView from './pages/PickupView.jsx'
 import OrderHistoryView from './pages/OrderHistoryView.jsx'
 import CustomerDisplayView from './pages/CustomerDisplayView.jsx'
 import CameraBroadcastView from './pages/CameraBroadcastView.jsx'
+import CashierOrderHistoryView from './pages/CashierOrderHistoryView.jsx'
 
 export default function App() {
   return (
@@ -38,7 +39,15 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-                    <Route
+          <Route
+            path="/counter/cashier/history"
+            element={
+              <ProtectedRoute allowedRole="cashier">
+                <CashierOrderHistoryView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/station/ytf"
             element={
               <ProtectedRoute allowedRole="ytf">

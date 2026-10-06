@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
@@ -8,7 +9,7 @@ export default function CashierView() {
   const [heldDrafts, setHeldDrafts] = useState([])
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeMode, setActiveMode] = useState(false)
-  const [paymentStage, setPaymentStage] = useState('building') // 'building' | 'awaiting_payment'
+  const [paymentStage, setPaymentStage] = useState('building')
   const [menuItems, setMenuItems] = useState([])
   const [pendingRequests, setPendingRequests] = useState(new Set())
   const [cart, setCart] = useState([])
@@ -76,14 +77,14 @@ export default function CashierView() {
     setLobbyOrders([...waiting.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)))
   }
 
-  async function loadCheckoutSession() {
-    const { data } = await supabase.from('checkout_sessions').select('*').eq('id', 'current').single()
-    setCheckoutSession(data)
-  }
-
   async function loadPendingRequests() {
     const { data } = await supabase.from('stock_check_requests').select('menu_item_id').is('resolved_at', null)
     setPendingRequests(new Set((data ?? []).map((r) => r.menu_item_id)))
+  }
+
+  async function loadCheckoutSession() {
+    const { data } = await supabase.from('checkout_sessions').select('*').eq('id', 'current').single()
+    setCheckoutSession(data)
   }
 
   useEffect(() => {
@@ -95,6 +96,7 @@ export default function CashierView() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, loadLobby)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadLobby)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_check_requests' }, loadPendingRequests)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkout_sessions', filter: 'id=eq.current' }, loadCheckoutSession)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
         supabase
           .from('menu_items')
@@ -103,10 +105,16 @@ export default function CashierView() {
           .order('name')
           .then(({ data }) => setMenuItems(data ?? []))
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkout_sessions', filter: 'id=eq.current' }, loadCheckoutSession)
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [])
+
+  // Once the customer's photo lands, hand control back to "idle" automatically
+  useEffect(() => {
+    if (checkoutSession?.camera_command === 'capture' && checkoutSession?.receipt_url) {
+      supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
+    }
+  }, [checkoutSession?.camera_command, checkoutSession?.receipt_url])
 
   function pickOrder(order) {
     setSelectedOrder(order)
@@ -194,8 +202,9 @@ export default function CashierView() {
         items: cart.map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
         total,
         status: 'awaiting_payment',
-        updated_at: new Date().toISOString(),
         receipt_url: null,
+        camera_command: 'idle',
+        updated_at: new Date().toISOString(),
       })
       .eq('id', 'current')
     if (error) {
@@ -206,8 +215,27 @@ export default function CashierView() {
   }
 
   async function cancelPayment() {
-    await supabase.from('checkout_sessions').update({ status: 'idle' }).eq('id', 'current')
+    await supabase
+      .from('checkout_sessions')
+      .update({ status: 'idle', receipt_url: null, camera_command: 'idle' })
+      .eq('id', 'current')
     setPaymentStage('building')
+  }
+
+  function openCustomerCamera() {
+    supabase.from('checkout_sessions').update({ camera_command: 'open' }).eq('id', 'current')
+  }
+
+  function cancelCustomerCamera() {
+    supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
+  }
+
+  function takePhoto() {
+    supabase.from('checkout_sessions').update({ camera_command: 'capture' }).eq('id', 'current')
+  }
+
+  function retakePhoto() {
+    supabase.from('checkout_sessions').update({ receipt_url: null, camera_command: 'open' }).eq('id', 'current')
   }
 
   async function submitOrder() {
@@ -269,14 +297,20 @@ export default function CashierView() {
       }
     }
 
-    const { error: payError } = await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', orderId)
+    const { error: payError } = await supabase
+      .from('orders')
+      .update({ payment_status: 'paid', receipt_url: checkoutSession?.receipt_url ?? null })
+      .eq('id', orderId)
     if (payError) {
       alert(`Order #${orderNumber}: could not mark as paid: ${payError.message}`)
       setSubmitting(false)
       return
     }
 
-    await supabase.from('checkout_sessions').update({ status: 'idle' }).eq('id', 'current')
+    await supabase
+      .from('checkout_sessions')
+      .update({ status: 'idle', receipt_url: null, camera_command: 'idle' })
+      .eq('id', 'current')
     localStorage.removeItem('cashier_active_draft')
     await loadLobby()
     setLastOrderNumber(orderNumber)
@@ -311,11 +345,17 @@ export default function CashierView() {
 
   const hotFoodItems = menuItems.filter((i) => i.stations?.slug === 'hotfood')
   const beverageItems = menuItems.filter((i) => i.stations?.slug === 'beverage')
+  const cameraCommand = checkoutSession?.camera_command ?? 'idle'
+  const receiptUrl = checkoutSession?.receipt_url ?? null
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+    `DEMO PAYMENT - ${orderLabel} - Total RM${total.toFixed(2)}`
+  )}`
 
   return (
     <div className="view">
       <StaffHeader title="Cashier" />
       <h1>Cashier</h1>
+      <Link to="/counter/cashier/history" className="history-link">View order history →</Link>
 
       {lastOrderNumber && <div className="order-number-banner">Order #{lastOrderNumber} paid.</div>}
 
@@ -396,22 +436,31 @@ export default function CashierView() {
             </ul>
             <div className="payment-total">Total: RM {total.toFixed(2)}</div>
           </div>
+
           <div className="payment-qr">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                `DEMO PAYMENT - ${orderLabel} - Total RM${total.toFixed(2)}`
-              )}`}
-              alt="Scan to pay"
-            />
-            {checkoutSession?.receipt_url ? (
+            <div className="qr-overlay-wrap">
+              <img src={qrUrl} alt="Scan to pay" />
+              {receiptUrl && (
+                <div className="receipt-popup">
+                  <p>Receipt captured ✓</p>
+                  <img src={receiptUrl} alt="Customer's receipt" />
+                  <button onClick={retakePhoto}>Retake</button>
+                </div>
+              )}
+            </div>
+
+            {!receiptUrl && cameraCommand === 'idle' && (
+              <button className="btn-primary" onClick={openCustomerCamera}>Open camera</button>
+            )}
+            {!receiptUrl && cameraCommand === 'open' && (
               <>
-                <p>Receipt received:</p>
-                <img src={checkoutSession.receipt_url} alt="Customer's receipt" className="cashier-receipt-thumb" />
+                <p>Waiting for customer to show receipt…</p>
+                <button className="btn-primary" onClick={takePhoto}>Take photo</button>
+                <button onClick={cancelCustomerCamera}>Cancel</button>
               </>
-            ) : (
-              <p>Waiting for customer to pay…</p>
             )}
           </div>
+
           <div className="payment-actions">
             <button
               className="btn-primary"
