@@ -165,3 +165,8 @@ button:disabled {
 .history-receipt-tag { font-size: 12px; color: #1d9e75; margin-left: 6px; }
 .history-receipt-expanded { margin-top: 8px; }
 .history-receipt-expanded img { max-width: 240px; border-radius: 8px; }
+.camera-enable-overlay {
+  position: fixed; inset: 0; z-index: 999;
+  background: rgba(0,0,0,0.85); color: #fff;
+  font-size: 20px; border: none; cursor: pointer;
+}

@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabaseClient.js'
 
 export default function CustomerDisplayView() {
   const [session, setSession] = useState(null)
-  const [cameraLive, setCameraLive] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
+  const [cameraError, setCameraError] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const lastCommandRef = useRef(null)
@@ -26,34 +28,37 @@ export default function CustomerDisplayView() {
     return () => supabase.removeChannel(channel)
   }, [])
 
-  async function openCamera() {
+  async function armCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
         audio: false,
       })
       streamRef.current = stream
-      setCameraLive(true)
+      setCameraReady(true)
+      setCameraError('')
       setTimeout(() => {
         if (videoRef.current) videoRef.current.srcObject = stream
       }, 0)
     } catch (err) {
-      console.error('Could not open camera:', err)
+      console.error('Camera setup failed:', err)
+      setCameraError(err.message || 'Could not access camera')
     }
   }
 
-  function closeCamera() {
-    if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    setCameraLive(false)
-  }
+  // Try to arm the camera automatically on load. On browsers that block this
+  // without a direct tap (notably Safari/iPad), cameraError will be set and
+  // the tap-to-enable screen below handles it instead.
+  useEffect(() => {
+    armCamera()
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
 
-  async function capturePhoto() {
+  function capturePhoto() {
     const video = videoRef.current
-    if (!video || video.videoWidth === 0) {
-      closeCamera()
-      return
-    }
+    if (!video || video.videoWidth === 0) return
 
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
@@ -62,7 +67,7 @@ export default function CustomerDisplayView() {
 
     canvas.toBlob(
       async (blob) => {
-        closeCamera()
+        setShowPreview(false)
         if (!blob) return
 
         const fileName = `receipt-${Date.now()}.jpg`
@@ -90,9 +95,9 @@ export default function CustomerDisplayView() {
     if (command === lastCommandRef.current) return
     lastCommandRef.current = command
 
-    if (command === 'open') openCamera()
+    if (command === 'open') setShowPreview(true)
     else if (command === 'capture') capturePhoto()
-    else closeCamera()
+    else setShowPreview(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.camera_command])
 
@@ -110,6 +115,21 @@ export default function CustomerDisplayView() {
 
   return (
     <div className="customer-display">
+      {cameraError && !cameraReady && (
+        <button className="camera-enable-overlay" onClick={armCamera}>
+          Tap here once to enable this screen's camera
+        </button>
+      )}
+
+      {/* Stays mounted and streaming continuously once armed, just hidden until needed */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ display: 'none' }}
+      />
+
       <div className="customer-display-order">
         <h2>{session.order_label}</h2>
         <ul>
@@ -129,16 +149,24 @@ export default function CustomerDisplayView() {
               <p>Receipt captured ✓</p>
               <img src={session.receipt_url} alt="Your receipt" />
             </div>
-          ) : cameraLive ? (
+          ) : showPreview ? (
             <div className="receipt-popup">
               <p>Please show your receipt to the camera</p>
-              <video ref={videoRef} autoPlay playsInline muted className="camera-preview" />
+              <video
+                ref={(el) => {
+                  if (el && streamRef.current) el.srcObject = streamRef.current
+                }}
+                autoPlay
+                playsInline
+                muted
+                className="camera-preview"
+              />
             </div>
           ) : (
             <img src={qrUrl} alt="Scan to pay" />
           )}
         </div>
-        {!session.receipt_url && !cameraLive && <p>Scan to pay (demo)</p>}
+        {!session.receipt_url && !showPreview && <p>Scan to pay (demo)</p>}
       </div>
     </div>
   )
