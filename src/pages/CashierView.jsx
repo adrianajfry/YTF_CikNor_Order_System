@@ -14,6 +14,7 @@ export default function CashierView() {
   const [cart, setCart] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
+  const [checkoutSession, setCheckoutSession] = useState(null)
 
   useEffect(() => {
     try {
@@ -75,6 +76,11 @@ export default function CashierView() {
     setLobbyOrders([...waiting.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)))
   }
 
+  async function loadCheckoutSession() {
+    const { data } = await supabase.from('checkout_sessions').select('*').eq('id', 'current').single()
+    setCheckoutSession(data)
+  }
+
   async function loadPendingRequests() {
     const { data } = await supabase.from('stock_check_requests').select('menu_item_id').is('resolved_at', null)
     setPendingRequests(new Set((data ?? []).map((r) => r.menu_item_id)))
@@ -83,6 +89,7 @@ export default function CashierView() {
   useEffect(() => {
     loadLobby()
     loadPendingRequests()
+    loadCheckoutSession()
     const channel = supabase
       .channel('cashier-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, loadLobby)
@@ -96,6 +103,7 @@ export default function CashierView() {
           .order('name')
           .then(({ data }) => setMenuItems(data ?? []))
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkout_sessions', filter: 'id=eq.current' }, loadCheckoutSession)
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [])
@@ -187,6 +195,7 @@ export default function CashierView() {
         total,
         status: 'awaiting_payment',
         updated_at: new Date().toISOString(),
+        receipt_url: null,
       })
       .eq('id', 'current')
     if (error) {
@@ -394,10 +403,23 @@ export default function CashierView() {
               )}`}
               alt="Scan to pay"
             />
-            <p>Waiting for customer to pay…</p>
+            {checkoutSession?.receipt_url ? (
+              <>
+                <p>Receipt received:</p>
+                <img src={checkoutSession.receipt_url} alt="Customer's receipt" className="cashier-receipt-thumb" />
+              </>
+            ) : (
+              <p>Waiting for customer to pay…</p>
+            )}
           </div>
           <div className="payment-actions">
-            <button className="btn-primary" disabled={submitting} onClick={submitOrder}>
+            <button
+              className="btn-primary"
+              disabled={submitting}
+              onClick={() => {
+                if (window.confirm('Customer made a payment?')) submitOrder()
+              }}
+            >
               {submitting ? 'Sending…' : 'Submit order'}
             </button>
             <button onClick={cancelPayment}>Cancel</button>
