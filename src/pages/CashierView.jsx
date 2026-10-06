@@ -455,7 +455,7 @@ export default function CashierView() {
             {!receiptUrl && cameraCommand === 'open' && (
               <>
                 <p>Waiting for customer to show receipt…</p>
-                <button className="btn-primary" onClick={takePhoto}>Take photo</button>
+                <button className="btn-primary" onClick={takePhoto}>Capture payment receipt</button>
                 <button onClick={cancelCustomerCamera}>Cancel</button>
               </>
             )}
