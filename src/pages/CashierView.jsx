@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
+import CashierReceiptViewer from '../components/CashierReceiptViewer.jsx'
 
 export default function CashierView() {
   const [lobbyOrders, setLobbyOrders] = useState([])
@@ -16,6 +17,9 @@ export default function CashierView() {
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
   const [checkoutSession, setCheckoutSession] = useState(null)
+  const [customerCamLive, setCustomerCamLive] = useState(false)
+  const [capturing, setCapturing] = useState(false)
+  const [captureNote, setCaptureNote] = useState('')
 
   useEffect(() => {
     try {
@@ -46,6 +50,22 @@ export default function CashierView() {
   useEffect(() => {
     localStorage.setItem('cashier_held_drafts', JSON.stringify(heldDrafts))
   }, [heldDrafts])
+
+  // Receipt photos expire after 3 days. Deleting via the Storage API (not SQL) removes the real files.
+  useEffect(() => {
+    async function cleanupOldReceipts() {
+      const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000
+      const { data, error } = await supabase.storage
+        .from('payment-receipts')
+        .list('', { limit: 1000, sortBy: { column: 'created_at', order: 'asc' } })
+      if (error || !data) return
+      const expired = data
+        .filter((file) => file.created_at && new Date(file.created_at).getTime() < cutoff)
+        .map((file) => file.name)
+      if (expired.length > 0) await supabase.storage.from('payment-receipts').remove(expired)
+    }
+    cleanupOldReceipts()
+  }, [])
 
   useEffect(() => {
     async function loadMenu() {
@@ -109,12 +129,27 @@ export default function CashierView() {
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // Once the customer's photo lands, hand control back to "idle" automatically
+  // Once the customer display's photo lands, reset the command
   useEffect(() => {
-    if (checkoutSession?.camera_command === 'capture' && checkoutSession?.receipt_url) {
+    if (checkoutSession?.camera_command?.startsWith('capture') && checkoutSession?.receipt_url) {
       supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
     }
   }, [checkoutSession?.camera_command, checkoutSession?.receipt_url])
+
+  // A photo arriving means the capture succeeded
+  useEffect(() => {
+    if (checkoutSession?.receipt_url) setCapturing(false)
+  }, [checkoutSession?.receipt_url])
+
+  // If the photo never arrives, tell the cashier instead of waiting forever
+  useEffect(() => {
+    if (!capturing) return
+    const timer = setTimeout(() => {
+      setCapturing(false)
+      setCaptureNote('The photo did not arrive. Please try again.')
+    }, 15000)
+    return () => clearTimeout(timer)
+  }, [capturing])
 
   function pickOrder(order) {
     setSelectedOrder(order)
@@ -211,6 +246,8 @@ export default function CashierView() {
       alert(`Could not start payment: ${error.message}`)
       return
     }
+    setCapturing(false)
+    setCaptureNote('')
     setPaymentStage('awaiting_payment')
   }
 
@@ -219,23 +256,26 @@ export default function CashierView() {
       .from('checkout_sessions')
       .update({ status: 'idle', receipt_url: null, camera_command: 'idle' })
       .eq('id', 'current')
+    setCapturing(false)
+    setCaptureNote('')
     setPaymentStage('building')
   }
 
-  function openCustomerCamera() {
-    supabase.from('checkout_sessions').update({ camera_command: 'open' }).eq('id', 'current')
-  }
-
-  function cancelCustomerCamera() {
-    supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
-  }
-
-  function takePhoto() {
-    supabase.from('checkout_sessions').update({ camera_command: 'capture' }).eq('id', 'current')
+  async function takePhoto() {
+    setCapturing(true)
+    setCaptureNote('')
+    const { error } = await supabase
+      .from('checkout_sessions')
+      .update({ camera_command: `capture-${Date.now()}` })
+      .eq('id', 'current')
+    if (error) {
+      setCapturing(false)
+      setCaptureNote(`Could not send the capture request: ${error.message}`)
+    }
   }
 
   function retakePhoto() {
-    supabase.from('checkout_sessions').update({ receipt_url: null, camera_command: 'open' }).eq('id', 'current')
+    supabase.from('checkout_sessions').update({ receipt_url: null, camera_command: 'idle' }).eq('id', 'current')
   }
 
   async function submitOrder() {
@@ -318,6 +358,8 @@ export default function CashierView() {
     setSelectedOrder(null)
     setActiveMode(false)
     setPaymentStage('building')
+    setCapturing(false)
+    setCaptureNote('')
     setSubmitting(false)
   }
 
@@ -345,7 +387,6 @@ export default function CashierView() {
 
   const hotFoodItems = menuItems.filter((i) => i.stations?.slug === 'hotfood')
   const beverageItems = menuItems.filter((i) => i.stations?.slug === 'beverage')
-  const cameraCommand = checkoutSession?.camera_command ?? 'idle'
   const receiptUrl = checkoutSession?.receipt_url ?? null
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
     `DEMO PAYMENT - ${orderLabel} - Total RM${total.toFixed(2)}`
@@ -440,6 +481,7 @@ export default function CashierView() {
           <div className="payment-qr">
             <div className="qr-overlay-wrap">
               <img src={qrUrl} alt="Scan to pay" />
+
               {receiptUrl && (
                 <div className="receipt-popup">
                   <p>Receipt captured ✓</p>
@@ -447,17 +489,26 @@ export default function CashierView() {
                   <button onClick={retakePhoto}>Retake</button>
                 </div>
               )}
+
+              <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
             </div>
 
-            {!receiptUrl && cameraCommand === 'idle' && (
-              <button className="btn-primary" onClick={openCustomerCamera}>Open camera</button>
-            )}
-            {!receiptUrl && cameraCommand === 'open' && (
+            {!receiptUrl && (
               <>
-                <p>Waiting for customer to show receipt…</p>
-                <button className="btn-primary" onClick={takePhoto}>Capture payment receipt</button>
-                <button onClick={cancelCustomerCamera}>Cancel</button>
+                {customerCamLive ? (
+                  <button className="btn-primary" disabled={capturing} onClick={takePhoto}>
+                    {capturing ? 'Capturing…' : 'Capture receipt'}
+                  </button>
+                ) : (
+                  <p>Waiting for the customer to tap "Show us your receipt"…</p>
+                )}
+                {captureNote && <p className="login-error">{captureNote}</p>}
               </>
+            )}
+            {receiptUrl && (
+              <p className="camera-status-note">
+                To retake, ask the customer to tap "Show us your receipt" again.
+              </p>
             )}
           </div>
 

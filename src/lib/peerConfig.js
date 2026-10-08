@@ -1,4 +1,5 @@
 export const VIEWER_PEER_ID = 'ytf-counter-viewer'
+export const CASHIER_VIEWER_PEER_ID = 'ytf-cashier-receipt-viewer'
 
 const turnHost = import.meta.env.VITE_TURN_HOST || 'standard.relay.metered.ca'
 const turnUsername = import.meta.env.VITE_TURN_USERNAME

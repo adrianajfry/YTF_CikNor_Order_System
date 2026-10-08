@@ -189,3 +189,5 @@ button:disabled {
 }
 .camera-zoom-controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .camera-zoom-controls span { min-width: 44px; text-align: center; font-weight: 600; }
+.receipt-popup .camera-preview { min-height: 0; max-height: 180px; }
+.customer-display-qr .btn-primary { font-size: 18px; padding: 14px 24px; margin-top: 8px; }
