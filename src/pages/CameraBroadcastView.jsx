@@ -74,8 +74,9 @@ export default function CameraBroadcastView() {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'environment',
-            width: { ideal: 640 },
+            width: { ideal: 854 },
             height: { ideal: 480 },
+            aspectRatio: { ideal: 16 / 9 },
             frameRate: { ideal: 15 },
           },
           audio: false,
