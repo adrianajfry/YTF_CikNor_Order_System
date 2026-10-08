@@ -2,19 +2,13 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient.js'
 import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
+import YtfLiveCamera from '../components/YtfLiveCamera.jsx'
 
 export default function YtfCounterView() {
   const [menuItems, setMenuItems] = useState([])
   const [cart, setCart] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
-  const SNAPSHOT_URL = supabase.storage.from('camera-snapshots').getPublicUrl('ytf-live.jpg').data.publicUrl
-  const [cameraTick, setCameraTick] = useState(0)
-
-  useEffect(() => {
-    const intervalId = setInterval(() => setCameraTick((t) => t + 1), 2000)
-    return () => clearInterval(intervalId)
-  }, [])
 
   useEffect(() => {
     async function loadMenu() {
@@ -114,15 +108,7 @@ export default function YtfCounterView() {
     <div className="view">
       <StaffHeader title="YTF counter" />
       <h1>YTF counter</h1>
-      <div className="counter-camera">
-        <h2 className="counter-camera-title">Live streaming of YTF food</h2>
-        <img
-          src={`${SNAPSHOT_URL}?t=${cameraTick}`}
-          alt="YTF counter camera"
-          className="camera-preview"
-        />
-        <p className="camera-status-note">Updates every 2 seconds.</p>
-      </div>
+      <YtfLiveCamera />
 
       {lastOrderNumber && (
         <div className="order-number-banner">
