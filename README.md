@@ -1,4 +1,4 @@
-# Yong Cik Nor Tau Foo — order system
+# Yong Tau Foo Cik Nor — order system
 
 A small internal web app for the order counter, three kitchen stations, the customer-facing status board, and the pickup counter. Every screen reads and writes the same Supabase database in real time. Each staff device logs in with its own username and password and only ever sees its own page.
 
