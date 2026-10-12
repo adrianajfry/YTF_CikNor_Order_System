@@ -133,11 +133,17 @@ export default function CustomerDisplayView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.camera_command])
 
-  // Turn the camera off if the payment ends for any reason
+  // Turn the camera off if the payment ends, or switches to cash
   useEffect(() => {
-    if (session && session.status !== 'awaiting_payment' && streamRef.current) stopCamera()
+    if (
+      session &&
+      (session.status !== 'awaiting_payment' || session.payment_method === 'cash') &&
+      streamRef.current
+    ) {
+      stopCamera()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.status])
+  }, [session?.status, session?.payment_method])
 
   useEffect(() => {
     return () => {
@@ -157,6 +163,28 @@ export default function CustomerDisplayView() {
 
   const qrText = `DEMO PAYMENT - ${session.order_label} - Total RM${Number(session.total).toFixed(2)}`
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrText)}`
+
+  if (session.payment_method === 'cash') {
+    return (
+      <div className="customer-display">
+        <div className="customer-display-order">
+          <h2>{session.order_label}</h2>
+          <ul>
+            {(session.items ?? []).map((item, i) => (
+              <li key={i}>
+                {item.quantity} x {item.name} — RM {(item.price * item.quantity).toFixed(2)}
+              </li>
+            ))}
+          </ul>
+          <div className="customer-display-total">Total: RM {Number(session.total).toFixed(2)}</div>
+        </div>
+        <div className="customer-display-qr">
+          <h2>Paying with cash</h2>
+          <p>Please hand RM {Number(session.total).toFixed(2)} to the cashier.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="customer-display">

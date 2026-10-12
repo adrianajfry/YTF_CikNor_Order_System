@@ -2,15 +2,18 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient.js'
 import StaffHeader from '../components/StaffHeader.jsx'
+import ToggleSwitch from '../components/ToggleSwitch.jsx'
 import { SLUG_TO_STATION_NAME } from '../lib/stationNames.js'
 
 export default function StationView({ stationSlug: stationSlugProp }) {
   const params = useParams()
   const stationSlug = stationSlugProp ?? params.stationSlug
   const stationName = SLUG_TO_STATION_NAME[stationSlug] ?? stationSlug
+  const isYtf = stationSlug === 'ytf'
   const [stationId, setStationId] = useState(null)
   const [items, setItems] = useState([])
   const [requests, setRequests] = useState([])
+  const [menuItems, setMenuItems] = useState([])
   const [loadingItems, setLoadingItems] = useState(true)
 
   useEffect(() => {
@@ -42,10 +45,20 @@ export default function StationView({ stationSlug: stationSlugProp }) {
     if (!id) return
     const { data } = await supabase
       .from('stock_check_requests')
-      .select('id, menu_items(name)')
+      .select('id, menu_item_id, menu_items(name)')
       .eq('station_id', id)
       .is('resolved_at', null)
     setRequests(data ?? [])
+  }
+
+  async function loadMenuItems(id) {
+    if (!id) return
+    const { data } = await supabase
+      .from('menu_items')
+      .select('id, name, available, restocked')
+      .eq('station_id', id)
+      .order('name')
+    setMenuItems(data ?? [])
   }
 
   useEffect(() => {
@@ -53,6 +66,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
 
     loadItems(stationId)
     loadRequests(stationId)
+    loadMenuItems(stationId)
 
     const channel = supabase
       .channel(`station-${stationId}`)
@@ -65,6 +79,11 @@ export default function StationView({ stationSlug: stationSlugProp }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'stock_check_requests', filter: `station_id=eq.${stationId}` },
         () => loadRequests(stationId)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'menu_items', filter: `station_id=eq.${stationId}` },
+        () => loadMenuItems(stationId)
       )
       .subscribe()
 
@@ -88,22 +107,61 @@ export default function StationView({ stationSlug: stationSlugProp }) {
     loadItems(stationId)
   }
 
-  async function resolveRequest(request, response) {
-    await supabase
-      .from('stock_check_requests')
-      .update({ resolved_at: new Date().toISOString(), response })
-      .eq('id', request.id)
-    if (response === 'unavailable') {
-      const { data: reqRow } = await supabase
+  // Hot food / beverage kitchens toggle their own menu (with a confirmation first)
+  async function setItemAvailability(item, available) {
+    const question = available
+      ? `Mark "${item.name}" as AVAILABLE?`
+      : `Mark "${item.name}" as UNAVAILABLE?`
+    if (!window.confirm(question)) return
+
+    const { error } = await supabase.rpc('kitchen_set_availability', {
+      p_item_id: item.id,
+      p_available: available,
+    })
+    if (error) {
+      alert(`Could not update ${item.name}: ${error.message}`)
+      return
+    }
+    loadMenuItems(stationId)
+    loadRequests(stationId)
+  }
+
+  // YTF kitchen tells the YTF counter the booth was topped up
+  async function confirmRestock(item) {
+    const { error } = await supabase.rpc('ytf_kitchen_confirm_restock', { p_item_id: item.id })
+    if (error) {
+      alert(`Could not notify the counter about ${item.name}: ${error.message}`)
+      return
+    }
+    loadMenuItems(stationId)
+  }
+
+  // Answer the cashier's "is it available?" question
+  async function resolveRequest(request, isAvailable) {
+    const itemName = request.menu_items?.name ?? 'this item'
+
+    if (isAvailable) {
+      if (!window.confirm(`Mark "${itemName}" as AVAILABLE?`)) return
+      const { error } = await supabase.rpc('kitchen_set_availability', {
+        p_item_id: request.menu_item_id,
+        p_available: true,
+      })
+      if (error) {
+        alert(`Could not update the item: ${error.message}`)
+        return
+      }
+    } else {
+      const { error } = await supabase
         .from('stock_check_requests')
-        .select('menu_item_id')
+        .update({ resolved_at: new Date().toISOString(), response: 'unavailable' })
         .eq('id', request.id)
-        .single()
-      if (reqRow) {
-        await supabase.from('menu_items').update({ available: false }).eq('id', reqRow.menu_item_id)
+      if (error) {
+        alert(`Could not answer the question: ${error.message}`)
+        return
       }
     }
     loadRequests(stationId)
+    loadMenuItems(stationId)
   }
 
   const groups = {}
@@ -123,23 +181,16 @@ export default function StationView({ stationSlug: stationSlugProp }) {
     (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
   )
 
+  const unavailableItems = menuItems.filter((item) => !item.available)
+  const sortedMenu = [...menuItems].sort(
+    (a, b) => Number(a.available) - Number(b.available) || a.name.localeCompare(b.name)
+  )
+
   return (
     <div className="view">
       <StaffHeader title={`${stationName} station`} />
       <h1>{stationName} station</h1>
       <Link to={`/station/${stationSlug}/history`} className="history-link">View order history →</Link>
-
-      {requests.length > 0 && (
-        <div className="banner">
-          {requests.map((req) => (
-            <div key={req.id} className="banner-row">
-              Counter is asking: is <strong>{req.menu_items?.name}</strong> available?
-              <button onClick={() => resolveRequest(req, 'available')}>Yes</button>
-              <button onClick={() => resolveRequest(req, 'unavailable')}>Out of stock</button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {loadingItems ? (
         <div className="ticket-groups">
@@ -176,6 +227,72 @@ export default function StationView({ stationSlug: stationSlugProp }) {
           })}
         </div>
       )}
+
+      <div className="availability-section">
+        {isYtf ? (
+          <>
+            <h2>Unavailable YTF food</h2>
+            {unavailableItems.length === 0 ? (
+              <p className="empty-note">Everything on the booth is marked available.</p>
+            ) : (
+              <ul className="availability-list alert">
+                {unavailableItems.map((item) => (
+                  <li key={item.id} className="availability-row">
+                    <span>{item.name}</span>
+                    {item.restocked ? (
+                      <span className="availability-state ok">
+                        Counter notified ✓ — waiting for them to switch it back on
+                      </span>
+                    ) : (
+                      <button className="btn-primary" onClick={() => confirmRestock(item)}>
+                        Topped up — notify counter
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <>
+            <h2>Menu availability</h2>
+
+            {requests.length > 0 && (
+              <div className="banner">
+                {requests.map((req) => (
+                  <div key={req.id} className="banner-row">
+                    Counter is asking: is <strong>{req.menu_items?.name}</strong> available again?
+                    <button className="btn-primary" onClick={() => resolveRequest(req, true)}>Yes, available</button>
+                    <button onClick={() => resolveRequest(req, false)}>Not yet</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {unavailableItems.length > 0 && (
+              <p className="availability-state">
+                Unavailable now: {unavailableItems.map((item) => item.name).join(', ')}
+              </p>
+            )}
+
+            <ul className="availability-list">
+              {sortedMenu.map((item) => (
+                <li key={item.id} className={`availability-row ${item.available ? '' : 'is-unavailable'}`}>
+                  <div className="availability-switch">
+                    <ToggleSwitch
+                      checked={item.available}
+                      label={`${item.name} availability`}
+                      onChange={() => setItemAvailability(item, !item.available)}
+                    />
+                    <span>{item.name}</span>
+                  </div>
+                  <span className="availability-state">{item.available ? 'Available' : 'Unavailable'}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </div>
   )
 }

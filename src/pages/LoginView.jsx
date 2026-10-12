@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import LoginGuide from '../components/LoginGuide.jsx'
 
 const ROLE_TO_PATH = {
   ytf_counter: '/counter/ytf',
@@ -99,7 +100,8 @@ export default function LoginView() {
                 {submitting ? 'Signing in…' : 'Log in'}
               </button>
               {error && <p className="login-error">{error}</p>}
-            </form>
+              </form>
+            <LoginGuide />
           </motion.div>
         )}
       </AnimatePresence>

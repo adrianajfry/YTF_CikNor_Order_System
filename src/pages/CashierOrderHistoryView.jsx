@@ -11,7 +11,7 @@ export default function CashierOrderHistoryView() {
   async function loadHistory() {
     const { data } = await supabase
       .from('orders')
-      .select('id, order_number, total_amount, created_at, receipt_url')
+            .select('id, order_number, total_amount, created_at, receipt_url, payment_method, cash_received')
       .eq('payment_status', 'paid')
       .order('created_at', { ascending: false })
       .limit(100)
@@ -52,11 +52,21 @@ export default function CashierOrderHistoryView() {
               <div>
                 Order #{order.order_number} — RM {Number(order.total_amount).toFixed(2)}
                 <span className="history-date"> · {new Date(order.created_at).toLocaleString()}</span>
+                {order.payment_method && (
+                  <span className="history-method-tag">
+                    {order.payment_method === 'cash' ? '💵 cash' : '📱 QR'}
+                  </span>
+                )}
                 {order.receipt_url && <span className="history-receipt-tag"> 📷 receipt</span>}
               </div>
               {expandedId === order.id && (
                 <div className="history-receipt-expanded">
-                  {order.receipt_url ? (
+                  {order.payment_method === 'cash' ? (
+                    <p>
+                      Cash received: RM {Number(order.cash_received ?? 0).toFixed(2)} · Change given: RM{' '}
+                      {Math.max(0, Number(order.cash_received ?? 0) - Number(order.total_amount)).toFixed(2)}
+                    </p>
+                  ) : order.receipt_url ? (
                     <img src={order.receipt_url} alt={`Receipt for order ${order.order_number}`} />
                   ) : (
                     <p className="empty-note">No receipt was captured for this order.</p>

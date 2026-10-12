@@ -5,12 +5,19 @@ import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 import CashierReceiptViewer from '../components/CashierReceiptViewer.jsx'
 
+const toCents = (value) => Math.round((parseFloat(value) || 0) * 100)
+const formatCents = (cents) => (cents / 100).toFixed(2)
+
 export default function CashierView() {
   const [lobbyOrders, setLobbyOrders] = useState([])
   const [heldDrafts, setHeldDrafts] = useState([])
   const [selectedOrder, setSelectedOrder] = useState(null)
+  const [existingItems, setExistingItems] = useState([])
+  const [existingTotal, setExistingTotal] = useState(0)
   const [activeMode, setActiveMode] = useState(false)
   const [paymentStage, setPaymentStage] = useState('building')
+  const [paymentMethod, setPaymentMethod] = useState('qr') // 'qr' | 'cash'
+  const [cashReceived, setCashReceived] = useState('')
   const [menuItems, setMenuItems] = useState([])
   const [pendingRequests, setPendingRequests] = useState(new Set())
   const [cart, setCart] = useState([])
@@ -50,6 +57,34 @@ export default function CashierView() {
   useEffect(() => {
     localStorage.setItem('cashier_held_drafts', JSON.stringify(heldDrafts))
   }, [heldDrafts])
+
+  // When attached to a YTF order, load what's already on it so the payment total is complete
+  useEffect(() => {
+    if (!selectedOrder?.id) {
+      setExistingItems([])
+      setExistingTotal(0)
+      return
+    }
+    let cancelled = false
+    async function loadExisting() {
+      const { data: items } = await supabase
+        .from('order_items')
+        .select('quantity, unit_price, menu_items(name)')
+        .eq('order_id', selectedOrder.id)
+      const { data: order } = await supabase
+        .from('orders')
+        .select('total_amount')
+        .eq('id', selectedOrder.id)
+        .single()
+      if (cancelled) return
+      setExistingItems(items ?? [])
+      setExistingTotal(Number(order?.total_amount ?? 0))
+    }
+    loadExisting()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedOrder?.id])
 
   // Receipt photos expire after 3 days. Deleting via the Storage API (not SQL) removes the real files.
   useEffect(() => {
@@ -225,18 +260,33 @@ export default function CashierView() {
     setPendingRequests((prev) => new Set(prev).add(item.id))
   }
 
-  const total = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
+  const cartTotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
+  const grandTotal = Math.round((existingTotal + cartTotal) * 100) / 100
+  const dueCents = toCents(grandTotal)
+  const receivedCents = toCents(cashReceived)
+  const changeCents = receivedCents - dueCents
+  const canSubmit = paymentMethod === 'qr' || receivedCents >= dueCents
   const orderLabel = selectedOrder ? `Order #${selectedOrder.order_number}` : 'New order'
 
-  async function proceedToPayment() {
+  const checkoutItems = [
+    ...existingItems.map((i) => ({
+      name: i.menu_items?.name ?? 'YTF item',
+      quantity: i.quantity,
+      price: Number(i.unit_price),
+    })),
+    ...cart.map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
+  ]
+
+  async function proceedToPayment(method) {
     if (!selectedOrder && cart.length === 0) return
     const { error } = await supabase
       .from('checkout_sessions')
       .update({
         order_label: orderLabel,
-        items: cart.map((l) => ({ name: l.name, quantity: l.quantity, price: l.price })),
-        total,
+        items: checkoutItems,
+        total: grandTotal,
         status: 'awaiting_payment',
+        payment_method: method,
         receipt_url: null,
         camera_command: 'idle',
         updated_at: new Date().toISOString(),
@@ -246,16 +296,34 @@ export default function CashierView() {
       alert(`Could not start payment: ${error.message}`)
       return
     }
+    setPaymentMethod(method)
+    setCashReceived('')
     setCapturing(false)
     setCaptureNote('')
     setPaymentStage('awaiting_payment')
   }
 
+  async function switchMethod(method) {
+    if (method === paymentMethod) return
+    setPaymentMethod(method)
+    setCashReceived('')
+    setCapturing(false)
+    setCaptureNote('')
+    const update = { payment_method: method }
+    if (method === 'cash') {
+      update.receipt_url = null
+      update.camera_command = 'idle'
+    }
+    await supabase.from('checkout_sessions').update(update).eq('id', 'current')
+  }
+
   async function cancelPayment() {
     await supabase
       .from('checkout_sessions')
-      .update({ status: 'idle', receipt_url: null, camera_command: 'idle' })
+      .update({ status: 'idle', payment_method: 'qr', receipt_url: null, camera_command: 'idle' })
       .eq('id', 'current')
+    setPaymentMethod('qr')
+    setCashReceived('')
     setCapturing(false)
     setCaptureNote('')
     setPaymentStage('building')
@@ -298,7 +366,7 @@ export default function CashierView() {
         }
         const { error: totalError } = await supabase
           .from('orders')
-          .update({ total_amount: (existingOrder?.total_amount ?? 0) + total })
+          .update({ total_amount: (existingOrder?.total_amount ?? 0) + cartTotal })
           .eq('id', orderId)
         if (totalError) {
           alert(`Could not update the total for #${orderNumber}: ${totalError.message}`)
@@ -310,7 +378,7 @@ export default function CashierView() {
       orderNumber = await getNextOrderNumber(supabase)
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .insert({ order_number: orderNumber, total_amount: total })
+        .insert({ order_number: orderNumber, total_amount: cartTotal })
         .select()
         .single()
       if (orderError) {
@@ -339,7 +407,12 @@ export default function CashierView() {
 
     const { error: payError } = await supabase
       .from('orders')
-      .update({ payment_status: 'paid', receipt_url: checkoutSession?.receipt_url ?? null })
+      .update({
+        payment_status: 'paid',
+        payment_method: paymentMethod,
+        receipt_url: paymentMethod === 'qr' ? checkoutSession?.receipt_url ?? null : null,
+        cash_received: paymentMethod === 'cash' ? receivedCents / 100 : null,
+      })
       .eq('id', orderId)
     if (payError) {
       alert(`Order #${orderNumber}: could not mark as paid: ${payError.message}`)
@@ -349,7 +422,7 @@ export default function CashierView() {
 
     await supabase
       .from('checkout_sessions')
-      .update({ status: 'idle', receipt_url: null, camera_command: 'idle' })
+      .update({ status: 'idle', payment_method: 'qr', receipt_url: null, camera_command: 'idle' })
       .eq('id', 'current')
     localStorage.removeItem('cashier_active_draft')
     await loadLobby()
@@ -358,9 +431,19 @@ export default function CashierView() {
     setSelectedOrder(null)
     setActiveMode(false)
     setPaymentStage('building')
+    setPaymentMethod('qr')
+    setCashReceived('')
     setCapturing(false)
     setCaptureNote('')
     setSubmitting(false)
+  }
+
+  function confirmAndSubmit() {
+    const question =
+      paymentMethod === 'cash'
+        ? `Cash received: RM ${formatCents(receivedCents)}\nChange to give: RM ${formatCents(changeCents)}\n\nSubmit order?`
+        : 'Customer made a payment?'
+    if (window.confirm(question)) submitOrder()
   }
 
   function renderMenuCard(item) {
@@ -389,7 +472,7 @@ export default function CashierView() {
   const beverageItems = menuItems.filter((i) => i.stations?.slug === 'beverage')
   const receiptUrl = checkoutSession?.receipt_url ?? null
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-    `DEMO PAYMENT - ${orderLabel} - Total RM${total.toFixed(2)}`
+    `DEMO PAYMENT - ${orderLabel} - Total RM${grandTotal.toFixed(2)}`
   )}`
 
   return (
@@ -455,9 +538,16 @@ export default function CashierView() {
           <button
             className="btn-primary"
             disabled={!selectedOrder && cart.length === 0}
-            onClick={proceedToPayment}
+            onClick={() => proceedToPayment('qr')}
           >
-            Proceed with payment
+            Pay by QR
+          </button>
+          <button
+            className="btn-primary"
+            disabled={!selectedOrder && cart.length === 0}
+            onClick={() => proceedToPayment('cash')}
+          >
+            Pay by cash
           </button>
           <button onClick={backToLobby}>Back to lobby</button>
           <button className="btn-danger" onClick={discardDraft}>Discard</button>
@@ -465,66 +555,107 @@ export default function CashierView() {
       )}
 
       {activeMode && paymentStage === 'awaiting_payment' && (
-        <div className="payment-review">
-          <div className="payment-summary">
-            <h2>{orderLabel}</h2>
-            <ul>
-              {cart.map((line) => (
-                <li key={line.menu_item_id}>
-                  {line.quantity} x {line.name} — RM {(line.price * line.quantity).toFixed(2)}
-                </li>
-              ))}
-            </ul>
-            <div className="payment-total">Total: RM {total.toFixed(2)}</div>
+        <>
+          <div className="payment-method-switch">
+            <button className={paymentMethod === 'qr' ? 'active' : ''} onClick={() => switchMethod('qr')}>
+              QR payment
+            </button>
+            <button className={paymentMethod === 'cash' ? 'active' : ''} onClick={() => switchMethod('cash')}>
+              Cash
+            </button>
           </div>
 
-          <div className="payment-qr">
-            <div className="qr-overlay-wrap">
-              <img src={qrUrl} alt="Scan to pay" />
-
-              {receiptUrl && (
-                <div className="receipt-popup">
-                  <p>Receipt captured ✓</p>
-                  <img src={receiptUrl} alt="Customer's receipt" />
-                  <button onClick={retakePhoto}>Retake</button>
-                </div>
-              )}
-
-              <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
+          <div className="payment-review">
+            <div className="payment-summary">
+              <h2>{orderLabel}</h2>
+              <ul>
+                {checkoutItems.map((line, i) => (
+                  <li key={i}>
+                    {line.quantity} x {line.name} — RM {(line.price * line.quantity).toFixed(2)}
+                  </li>
+                ))}
+              </ul>
+              <div className="payment-total">Total: RM {grandTotal.toFixed(2)}</div>
             </div>
 
-            {!receiptUrl && (
-              <>
-                {customerCamLive ? (
-                  <button className="btn-primary" disabled={capturing} onClick={takePhoto}>
-                    {capturing ? 'Capturing…' : 'Capture receipt'}
-                  </button>
-                ) : (
-                  <p>Waiting for the customer to tap "Show us your receipt"…</p>
-                )}
-                {captureNote && <p className="login-error">{captureNote}</p>}
-              </>
-            )}
-            {receiptUrl && (
-              <p className="camera-status-note">
-                To retake, ask the customer to tap "Show us your receipt" again.
-              </p>
-            )}
-          </div>
+            {paymentMethod === 'qr' ? (
+              <div className="payment-qr">
+                <div className="qr-overlay-wrap">
+                  <img src={qrUrl} alt="Scan to pay" />
 
-          <div className="payment-actions">
-            <button
-              className="btn-primary"
-              disabled={submitting}
-              onClick={() => {
-                if (window.confirm('Customer made a payment?')) submitOrder()
-              }}
-            >
-              {submitting ? 'Sending…' : 'Submit order'}
-            </button>
-            <button onClick={cancelPayment}>Cancel</button>
+                  {receiptUrl && (
+                    <div className="receipt-popup">
+                      <p>Receipt captured ✓</p>
+                      <img src={receiptUrl} alt="Customer's receipt" />
+                      <button onClick={retakePhoto}>Retake</button>
+                    </div>
+                  )}
+
+                  <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
+                </div>
+
+                {!receiptUrl && (
+                  <>
+                    {customerCamLive ? (
+                      <button className="btn-primary" disabled={capturing} onClick={takePhoto}>
+                        {capturing ? 'Capturing…' : 'Capture receipt'}
+                      </button>
+                    ) : (
+                      <p>Waiting for the customer to tap "Show us your receipt"…</p>
+                    )}
+                    {captureNote && <p className="login-error">{captureNote}</p>}
+                  </>
+                )}
+                {receiptUrl && (
+                  <p className="camera-status-note">
+                    To retake, ask the customer to tap "Show us your receipt" again.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="payment-cash">
+                <label>
+                  Cash received (RM)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.05"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </label>
+                <div className="cash-quick">
+                  <button onClick={() => setCashReceived(formatCents(dueCents))}>Exact</button>
+                  {[5, 10, 20, 50, 100].map((note) => (
+                    <button key={note} onClick={() => setCashReceived(String(note))}>
+                      RM {note}
+                    </button>
+                  ))}
+                </div>
+                <div className={`cash-change ${receivedCents > 0 && changeCents < 0 ? 'short' : ''}`}>
+                  {receivedCents === 0
+                    ? 'Enter the cash received'
+                    : changeCents >= 0
+                    ? `Change: RM ${formatCents(changeCents)}`
+                    : `Short by RM ${formatCents(-changeCents)}`}
+                </div>
+              </div>
+            )}
+
+            <div className="payment-actions">
+              <button
+                className="btn-primary"
+                disabled={submitting || !canSubmit}
+                onClick={confirmAndSubmit}
+              >
+                {submitting ? 'Sending…' : 'Submit order'}
+              </button>
+              <button onClick={cancelPayment}>Cancel</button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

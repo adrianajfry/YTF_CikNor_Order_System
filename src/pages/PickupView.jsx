@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 
 export default function PickupView() {
   const [orders, setOrders] = useState([])
-  const [selected, setSelected] = useState(null) // { id, order_number }
+  const [doneOrders, setDoneOrders] = useState([])
+  const [selected, setSelected] = useState(null) // { id, order_number, board_status, ... }
   const [items, setItems] = useState([])
   const [searchNumber, setSearchNumber] = useState('')
   const [message, setMessage] = useState('')
+  const selectedIdRef = useRef(null)
 
   async function loadBoard() {
     const { data } = await supabase
@@ -17,6 +19,16 @@ export default function PickupView() {
       .order('recalled_at', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: true })
     setOrders(data ?? [])
+  }
+
+  async function loadDone() {
+    const { data } = await supabase
+      .from('orders')
+      .select('id, order_number, board_status, created_at, total_amount')
+      .eq('board_status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(30)
+    setDoneOrders(data ?? [])
   }
 
   async function loadItems(orderId) {
@@ -29,19 +41,23 @@ export default function PickupView() {
 
   useEffect(() => {
     loadBoard()
+    loadDone()
     const channel = supabase
       .channel('pickup-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadBoard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        loadBoard()
+        loadDone()
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
-        if (selected) loadItems(selected.id)
+        if (selectedIdRef.current) loadItems(selectedIdRef.current)
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected])
+  }, [])
 
   function selectOrder(order) {
     setSelected(order)
+    selectedIdRef.current = order.id
     setMessage('')
     loadItems(order.id)
   }
@@ -50,26 +66,33 @@ export default function PickupView() {
     setMessage('')
     const { data: order } = await supabase
       .from('orders')
-      .select('id, order_number')
+      .select('id, order_number, board_status, created_at, total_amount')
       .eq('order_number', searchNumber)
-      .neq('board_status', 'done')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
     if (!order) {
-      setMessage('No active order with that number.')
+      setMessage('No order with that number.')
       setItems([])
       setSelected(null)
+      selectedIdRef.current = null
       return
     }
     selectOrder(order)
   }
 
   async function markPickedUp(item) {
-    await supabase
+    const { error } = await supabase
       .from('order_items')
       .update({ status: 'picked_up', status_updated_at: new Date().toISOString() })
       .eq('id', item.id)
+    if (error) {
+      alert(`Could not mark as picked up: ${error.message}`)
+      return
+    }
+    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: 'picked_up' } : i)))
+    loadBoard()
+    loadDone()
   }
 
   async function recallOrder() {
@@ -80,6 +103,7 @@ export default function PickupView() {
 
   const preparing = orders.filter((o) => o.board_status === 'preparing')
   const ready = orders.filter((o) => o.board_status === 'ready')
+  const selectedIsDone = selected?.board_status === 'done'
 
   return (
     <div className="view">
@@ -117,6 +141,17 @@ export default function PickupView() {
             ))}
           </div>
         </div>
+        <div>
+          <h2>Done</h2>
+          <div className="lobby-list">
+            {doneOrders.length === 0 && <p className="empty-note">No completed orders yet.</p>}
+            {doneOrders.map((o) => (
+              <button key={o.id} className="board-chip done" onClick={() => selectOrder(o)}>
+                {o.order_number}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <h2>Or type an order number</h2>
@@ -129,16 +164,25 @@ export default function PickupView() {
 
       {selected && (
         <>
-          <h2>Order #{selected.order_number}</h2>
+          <h2>
+            Order #{selected.order_number}
+            {selectedIsDone && <span className="availability-state ok"> · Completed</span>}
+          </h2>
+          {selectedIsDone && selected.created_at && (
+            <p className="availability-state">
+              Ordered {new Date(selected.created_at).toLocaleString()}
+              {selected.total_amount != null && ` · Total RM ${Number(selected.total_amount).toFixed(2)}`}
+            </p>
+          )}
           <ul>
             {items.map((item) => (
               <li key={item.id}>
-                {item.quantity} x {item.menu_items?.name} — {item.status}
+                {item.quantity} x {item.menu_items?.name} — {item.status === 'picked_up' ? 'picked up' : item.status}
                 {item.status === 'ready' && <button onClick={() => markPickedUp(item)}>Mark picked up</button>}
               </li>
             ))}
           </ul>
-          <button onClick={recallOrder}>Flag as waiting too long</button>
+          {!selectedIsDone && <button onClick={recallOrder}>Flag as waiting too long</button>}
         </>
       )}
     </div>

@@ -191,3 +191,68 @@ button:disabled {
 .camera-zoom-controls span { min-width: 44px; text-align: center; font-weight: 600; }
 .receipt-popup .camera-preview { min-height: 0; max-height: 180px; }
 .customer-display-qr .btn-primary { font-size: 18px; padding: 14px 24px; margin-top: 8px; }
+.login-guide { margin-top: 20px; text-align: left; font-size: 13px; }
+.login-guide summary { cursor: pointer; font-weight: 600; text-align: center; }
+.login-guide ul { list-style: none; padding: 0; margin: 10px 0; }
+.login-guide li { padding: 8px 0; border-bottom: 1px solid #eee; }
+.login-guide code { background: #f0efe9; padding: 1px 5px; border-radius: 4px; }
+.login-guide-what { color: #888; margin-top: 2px; }
+
+.faded { opacity: 0.45; }
+.availability-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 6px; cursor: pointer; }
+.availability-toggle.locked { cursor: not-allowed; color: #888; }
+.availability-toggle input { width: 18px; height: 18px; }
+
+.availability-section { margin-top: 32px; padding-top: 16px; border-top: 2px solid #ddd; }
+.availability-list { list-style: none; padding: 0; margin: 0; }
+.availability-list.alert { border: 2px solid #f0c36d; background: #fff8e6; border-radius: 10px; padding: 6px 14px; }
+.availability-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eee; }
+.availability-row:last-child { border-bottom: none; }
+.availability-row.is-unavailable { color: #a32d2d; font-weight: 600; }
+.availability-switch { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+.availability-switch input { width: 20px; height: 20px; cursor: pointer; }
+.availability-state { font-size: 13px; color: #888; font-weight: normal; }
+.availability-state.ok { color: #1d9e75; }
+.toggle-switch,
+.toggle-switch:hover {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 13px;
+  background: #c9c8c2;
+  transition: background-color 0.2s ease, transform 0.08s ease;
+}
+.toggle-switch.on,
+.toggle-switch.on:hover { background: #1d9e75; }
+.toggle-switch:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+}
+.toggle-switch.on .toggle-knob { transform: translateX(20px); }
+.pickup-board > div { flex: 1; min-width: 0; }
+.board-chip.done { opacity: 0.75; border-color: #bbb; color: #666; }
+
+.payment-method-switch { display: inline-flex; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; margin: 12px 0; }
+.payment-method-switch button { border: none; border-radius: 0; }
+.payment-method-switch button.active,
+.payment-method-switch button.active:hover { background: #1d9e75; color: #fff; }
+
+.payment-cash { min-width: 240px; }
+.payment-cash label { display: block; font-weight: 600; }
+.payment-cash input { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 18px; }
+.cash-quick { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.cash-change { font-size: 22px; font-weight: bold; color: #1d9e75; }
+.cash-change.short { color: #c0392b; }
+.history-method-tag { font-size: 12px; color: #555; margin-left: 6px; }
