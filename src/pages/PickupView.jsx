@@ -178,7 +178,9 @@ export default function PickupView() {
             {items.map((item) => (
               <li key={item.id}>
                 {item.quantity} x {item.menu_items?.name} — {item.status === 'picked_up' ? 'picked up' : item.status}
-                {item.status === 'ready' && <button onClick={() => markPickedUp(item)}>Mark picked up</button>}
+                {item.status === 'ready' && (
+                <button className="btn-inline" onClick={() => markPickedUp(item)}>Mark picked up</button>
+              )}
               </li>
             ))}
           </ul>

@@ -5,7 +5,7 @@ body { font-family: system-ui, sans-serif; margin: 0; background: #f7f6f2; color
 .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
 .menu-card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; display: flex; flex-direction: column; gap: 8px; }
 .menu-card.unavailable { opacity: 0.5; }
-.menu-card-actions { display: flex; gap: 8px; }
+.menu-card-actions { display: flex; gap: 10px; }
 .banner { background: #fff3cd; border: 1px solid #ffe58f; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
 .banner-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ticket-groups { display: flex; flex-direction: column; gap: 14px; }
@@ -136,9 +136,29 @@ button:disabled {
 .payment-review { display: flex; flex-wrap: wrap; gap: 32px; margin-top: 16px; }
 .payment-summary { flex: 1; min-width: 220px; }
 .payment-total { font-weight: bold; font-size: 18px; margin-top: 10px; }
-.payment-qr { text-align: center; }
-.payment-actions { width: 100%; display: flex; gap: 10px; margin-top: 20px; }
+.payment-qr { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.receipt-live-feed { width: 100%; max-width: 260px; }
+.receipt-live-feed .camera-preview { min-height: 0; aspect-ratio: 16 / 9; object-fit: cover; }
 
+.receipt-camera-box { width: 100%; max-width: 260px; margin: 12px auto 0; text-align: center; }
+.receipt-camera-box .camera-preview { min-height: 0; aspect-ratio: 16 / 9; object-fit: cover; }
+.receipt-camera-title { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+.camera-setup-button { font-size: 13px; padding: 8px 12px; opacity: 0.8; }
+
+.button-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.btn-separated { margin-left: auto; }
+.btn-inline { margin-left: 12px; }
+
+.availability-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.payment-actions { width: 100%; display: flex; gap: 16px; margin-top: 20px; }
 .customer-display { display: flex; gap: 60px; align-items: center; justify-content: center; min-height: 100vh; padding: 40px; font-size: 20px; }
 .customer-display.idle { flex-direction: column; text-align: center; }
 .customer-display-order ul { list-style: none; padding: 0; }
@@ -256,3 +276,4 @@ button:disabled {
 .cash-change { font-size: 22px; font-weight: bold; color: #1d9e75; }
 .cash-change.short { color: #c0392b; }
 .history-method-tag { font-size: 12px; color: #555; margin-left: 6px; }
+.banner-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }

@@ -58,8 +58,8 @@ export default function CashierReceiptViewer({ onLiveChange, hidden }) {
   if (!stream || hidden) return null
 
   return (
-    <div className="receipt-popup">
-      <p>Customer camera (live)</p>
+    <div className="receipt-live-feed">
+      <p className="camera-status-note">Customer camera (live)</p>
       <video
         ref={(el) => {
           if (el && el.srcObject !== stream) el.srcObject = stream

@@ -195,10 +195,20 @@ export default function YtfCounterView() {
           </li>
         ))}
       </ul>
-      <button onClick={() => setCart([])}>Clear order</button>
-      <button className="btn-primary" disabled={submitting || cart.length === 0} onClick={submitOrder}>
-        {submitting ? 'Sending…' : 'Send to cashier'}
-      </button>
+      <div className="button-row">
+        <button className="btn-primary" disabled={submitting || cart.length === 0} onClick={submitOrder}>
+          {submitting ? 'Sending…' : 'Send to cashier'}
+        </button>
+        <button
+          className="btn-danger btn-separated"
+          disabled={cart.length === 0}
+          onClick={() => {
+            if (window.confirm('Clear the whole bowl? This cannot be undone.')) setCart([])
+          }}
+        >
+          Clear order
+        </button>
+      </div>
     </div>
   )
 }

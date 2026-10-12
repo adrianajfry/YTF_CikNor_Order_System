@@ -15,6 +15,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
   const [requests, setRequests] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [loadingItems, setLoadingItems] = useState(true)
+  const [availabilitySearch, setAvailabilitySearch] = useState('')
 
   useEffect(() => {
     async function init() {
@@ -182,9 +183,9 @@ export default function StationView({ stationSlug: stationSlugProp }) {
   )
 
   const unavailableItems = menuItems.filter((item) => !item.available)
-  const sortedMenu = [...menuItems].sort(
-    (a, b) => Number(a.available) - Number(b.available) || a.name.localeCompare(b.name)
-  )
+  const sortedMenu = [...menuItems]
+    .filter((item) => item.name.toLowerCase().includes(availabilitySearch.trim().toLowerCase()))
+    .sort((a, b) => Number(a.available) - Number(b.available) || a.name.localeCompare(b.name))
 
   return (
     <div className="view">
@@ -274,6 +275,15 @@ export default function StationView({ stationSlug: stationSlugProp }) {
                 Unavailable now: {unavailableItems.map((item) => item.name).join(', ')}
               </p>
             )}
+
+            <input
+              type="search"
+              className="availability-search"
+              placeholder="Search menu…"
+              value={availabilitySearch}
+              onChange={(e) => setAvailabilitySearch(e.target.value)}
+            />
+            {sortedMenu.length === 0 && <p className="empty-note">No menu items match your search.</p>}
 
             <ul className="availability-list">
               {sortedMenu.map((item) => (

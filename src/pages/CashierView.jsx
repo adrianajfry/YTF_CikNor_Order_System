@@ -218,6 +218,7 @@ export default function CashierView() {
   }
 
   function discardDraft() {
+    if (!window.confirm('Discard this order? This cannot be undone.')) return
     localStorage.removeItem('cashier_active_draft')
     setCart([])
     setSelectedOrder(null)
@@ -535,22 +536,24 @@ export default function CashierView() {
             ))}
           </ul>
 
-          <button
-            className="btn-primary"
-            disabled={!selectedOrder && cart.length === 0}
-            onClick={() => proceedToPayment('qr')}
-          >
-            Pay by QR
-          </button>
-          <button
-            className="btn-primary"
-            disabled={!selectedOrder && cart.length === 0}
-            onClick={() => proceedToPayment('cash')}
-          >
-            Pay by cash
-          </button>
-          <button onClick={backToLobby}>Back to lobby</button>
-          <button className="btn-danger" onClick={discardDraft}>Discard</button>
+          <div className="button-row">
+            <button
+              className="btn-primary"
+              disabled={!selectedOrder && cart.length === 0}
+              onClick={() => proceedToPayment('qr')}
+            >
+              Pay by QR
+            </button>
+            <button
+              className="btn-primary"
+              disabled={!selectedOrder && cart.length === 0}
+              onClick={() => proceedToPayment('cash')}
+            >
+              Pay by cash
+            </button>
+            <button onClick={backToLobby}>Back to lobby</button>
+            <button className="btn-danger btn-separated" onClick={discardDraft}>Discard</button>
+          </div>
         </>
       )}
 
@@ -587,29 +590,25 @@ export default function CashierView() {
                     <div className="receipt-popup">
                       <p>Receipt captured ✓</p>
                       <img src={receiptUrl} alt="Customer's receipt" />
-                      <button onClick={retakePhoto}>Retake</button>
                     </div>
                   )}
-
-                  <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
                 </div>
 
-                {!receiptUrl && (
+                <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
+
+                {receiptUrl ? (
+                  <button onClick={retakePhoto}>Retake receipt photo</button>
+                ) : (
                   <>
                     {customerCamLive ? (
                       <button className="btn-primary" disabled={capturing} onClick={takePhoto}>
                         {capturing ? 'Capturing…' : 'Capture receipt'}
                       </button>
                     ) : (
-                      <p>Waiting for the customer to tap "Show us your receipt"…</p>
+                      <p className="camera-status-note">Waiting for the customer display camera…</p>
                     )}
                     {captureNote && <p className="login-error">{captureNote}</p>}
                   </>
-                )}
-                {receiptUrl && (
-                  <p className="camera-status-note">
-                    To retake, ask the customer to tap "Show us your receipt" again.
-                  </p>
                 )}
               </div>
             ) : (
@@ -652,7 +651,7 @@ export default function CashierView() {
               >
                 {submitting ? 'Sending…' : 'Submit order'}
               </button>
-              <button onClick={cancelPayment}>Cancel</button>
+              <button className="btn-separated" onClick={cancelPayment}>Cancel</button>
             </div>
           </div>
         </>

@@ -8,11 +8,21 @@ export default function CustomerDisplayView() {
   const [cameraOn, setCameraOn] = useState(false)
   const [camStatus, setCamStatus] = useState('idle') // idle | connecting | live | error
   const [camDetail, setCamDetail] = useState('')
+  const [needsTap, setNeedsTap] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const stopCallerRef = useRef(null)
+  const startingRef = useRef(false)
+  const wantsCameraRef = useRef(false)
   const lastCommandRef = useRef('idle')
+
+  // The camera is wanted during a QR payment that has no receipt photo yet
+  const wantsCamera =
+    session?.status === 'awaiting_payment' &&
+    session?.payment_method !== 'cash' &&
+    !session?.receipt_url
 
   async function loadSession() {
     const { data } = await supabase.from('checkout_sessions').select('*').eq('id', 'current').single()
@@ -33,6 +43,8 @@ export default function CustomerDisplayView() {
   }, [])
 
   async function startCamera() {
+    if (streamRef.current || startingRef.current) return
+    startingRef.current = true
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -43,10 +55,18 @@ export default function CustomerDisplayView() {
         },
         audio: false,
       })
+
+      // The payment may have ended while the permission prompt was open
+      if (!wantsCameraRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+
       streamRef.current = stream
       setCameraOn(true)
       setCamStatus('connecting')
       setCamDetail('')
+      setNeedsTap(false)
       stopCallerRef.current = startCaller({
         stream,
         targetId: CASHIER_VIEWER_PEER_ID,
@@ -59,6 +79,9 @@ export default function CustomerDisplayView() {
       console.error('Could not open camera:', err)
       setCamStatus('error')
       setCamDetail(err.message || 'Could not open the camera')
+      setNeedsTap(true)
+    } finally {
+      startingRef.current = false
     }
   }
 
@@ -71,6 +94,19 @@ export default function CustomerDisplayView() {
     setCamStatus('idle')
     setCamDetail('')
   }
+
+  // Open the camera by itself whenever a QR payment needs a receipt; close it otherwise.
+  // This also reopens it after the cashier presses Retake.
+  useEffect(() => {
+    wantsCameraRef.current = wantsCamera
+    if (wantsCamera) startCamera()
+    else if (streamRef.current) stopCamera()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsCamera])
+
+  useEffect(() => {
+    if (session?.receipt_url) setNotice('')
+  }, [session?.receipt_url])
 
   useEffect(() => {
     if (cameraOn && videoRef.current && streamRef.current) {
@@ -88,11 +124,19 @@ export default function CustomerDisplayView() {
     canvas.getContext('2d').drawImage(video, 0, 0)
 
     setSaving(true)
+    setNotice('')
     canvas.toBlob(
       async (blob) => {
         stopCamera()
-        if (!blob) {
+
+        const fail = (message) => {
+          setNotice(message)
           setSaving(false)
+          startCamera() // bring the camera back so the cashier can try again
+        }
+
+        if (!blob) {
+          fail('The photo could not be taken. Please show your receipt again.')
           return
         }
 
@@ -102,9 +146,7 @@ export default function CustomerDisplayView() {
           .upload(fileName, blob, { contentType: 'image/jpeg' })
         if (uploadError) {
           console.error('Could not save the photo:', uploadError)
-          setCamStatus('error')
-          setCamDetail('We could not save the photo. Please try again.')
-          setSaving(false)
+          fail('We could not save the photo. Please show your receipt again.')
           return
         }
 
@@ -114,8 +156,8 @@ export default function CustomerDisplayView() {
         })
         if (rpcError) {
           console.error('Could not attach the photo:', rpcError)
-          setCamStatus('error')
-          setCamDetail('We could not save the photo. Please try again.')
+          fail('We could not save the photo. Please show your receipt again.')
+          return
         }
         setSaving(false)
       },
@@ -133,18 +175,6 @@ export default function CustomerDisplayView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.camera_command])
 
-  // Turn the camera off if the payment ends, or switches to cash
-  useEffect(() => {
-    if (
-      session &&
-      (session.status !== 'awaiting_payment' || session.payment_method === 'cash') &&
-      streamRef.current
-    ) {
-      stopCamera()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.status, session?.payment_method])
-
   useEffect(() => {
     return () => {
       if (stopCallerRef.current) stopCallerRef.current()
@@ -160,9 +190,6 @@ export default function CustomerDisplayView() {
       </div>
     )
   }
-
-  const qrText = `DEMO PAYMENT - ${session.order_label} - Total RM${Number(session.total).toFixed(2)}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrText)}`
 
   if (session.payment_method === 'cash') {
     return (
@@ -186,6 +213,9 @@ export default function CustomerDisplayView() {
     )
   }
 
+  const qrText = `DEMO PAYMENT - ${session.order_label} - Total RM${Number(session.total).toFixed(2)}`
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrText)}`
+
   return (
     <div className="customer-display">
       <div className="customer-display-order">
@@ -204,39 +234,42 @@ export default function CustomerDisplayView() {
         <div className="qr-overlay-wrap">
           <img src={qrUrl} alt="Scan to pay" />
 
-          {session.receipt_url ? (
+          {session.receipt_url && (
             <div className="receipt-popup">
               <p>Receipt captured ✓</p>
               <img src={session.receipt_url} alt="Your receipt" />
             </div>
-          ) : cameraOn ? (
-            <div className="receipt-popup">
-              <p>Hold your payment receipt up to the camera</p>
-              <video ref={videoRef} autoPlay playsInline muted className="camera-preview" />
-              <p className="camera-status-note">
-                {camStatus === 'live' && 'Connected to the cashier ✓'}
-                {camStatus === 'connecting' && (camDetail || 'Connecting to the cashier…')}
-                {camStatus === 'error' && camDetail}
-              </p>
-            </div>
-          ) : saving ? (
+          )}
+          {saving && !session.receipt_url && (
             <div className="receipt-popup">
               <p>Saving your receipt…</p>
             </div>
-          ) : null}
+          )}
         </div>
+        <p>Scan to pay (demo)</p>
 
-        {!session.receipt_url && !cameraOn && !saving && (
-          <>
-            <p>Scan to pay (demo)</p>
-            <button className="btn-primary" onClick={startCamera}>
-              Show us your receipt
-            </button>
-            {camStatus === 'error' && <p className="login-error">{camDetail}</p>}
-          </>
+        {!session.receipt_url && (
+          <div className="receipt-camera-box">
+            <p className="receipt-camera-title">After paying, show your receipt to this camera</p>
+            {cameraOn ? (
+              <>
+                <video ref={videoRef} autoPlay playsInline muted className="camera-preview" />
+                <p className="camera-status-note">
+                  {camStatus === 'live' && 'Connected to the cashier ✓'}
+                  {camStatus === 'connecting' && (camDetail || 'Connecting to the cashier…')}
+                  {camStatus === 'error' && camDetail}
+                </p>
+              </>
+            ) : needsTap ? (
+              <button className="camera-setup-button" onClick={startCamera}>
+                Camera is off — staff: tap here to enable
+              </button>
+            ) : (
+              <p className="camera-status-note">Starting camera…</p>
+            )}
+            {notice && <p className="login-error">{notice}</p>}
+          </div>
         )}
-
-        {cameraOn && <button onClick={stopCamera}>Close camera</button>}
       </div>
     </div>
   )
