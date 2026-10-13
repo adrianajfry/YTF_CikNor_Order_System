@@ -5,6 +5,7 @@ import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 import CashierReceiptViewer from '../components/CashierReceiptViewer.jsx'
 import { useCashierReceiptStream } from '../lib/useCashierReceiptStream.js'
+import MiniCalculator from '../components/MiniCalculator.jsx'
 
 const toCents = (value) => Math.round((parseFloat(value) || 0) * 100)
 const formatCents = (cents) => (cents / 100).toFixed(2)
@@ -229,12 +230,26 @@ export default function CashierView() {
     setActiveMode(false)
   }
 
-  function discardDraft() {
-    if (!window.confirm('Discard this order? This cannot be undone.')) return
+  async function discardDraft() {
+    if (selectedOrder) {
+      if (!window.confirm(`Discard order #${selectedOrder.order_number}? The kitchen will be told to stop making it.`)) return
+      const { error } = await supabase.rpc('cashier_cancel_order', {
+        p_order_id: selectedOrder.id,
+        p_reason: 'Discarded by cashier',
+      })
+      if (error) {
+        alert(`Could not discard order #${selectedOrder.order_number}: ${error.message}`)
+        return
+      }
+    } else if (!window.confirm('Discard this order?')) {
+      return
+    }
+
     localStorage.removeItem('cashier_active_draft')
     setCart([])
     setSelectedOrder(null)
     setActiveMode(false)
+    await loadLobby()
   }
 
   function addToCart(item) {
@@ -274,18 +289,14 @@ export default function CashierView() {
   }
 
   async function cancelWaitingOrder(order) {
-    const reason = window.prompt(
-      `Cancel order #${order.order_number}?\nThe kitchen will be told to stop making it.\n\nReason (optional):`,
-      ''
-    )
-    if (reason === null) return // pressed Cancel: keep the order
+    if (!window.confirm(`Discard order #${order.order_number}? The kitchen will be told to stop making it.`)) return
 
     const { error } = await supabase.rpc('cashier_cancel_order', {
       p_order_id: order.id,
-      p_reason: reason,
+      p_reason: 'Discarded by cashier',
     })
     if (error) {
-      alert(`Could not cancel order #${order.order_number}: ${error.message}`)
+      alert(`Could not discard order #${order.order_number}: ${error.message}`)
       return
     }
     await loadLobby()
@@ -547,10 +558,10 @@ export default function CashierView() {
                 </button>
                 <button
                   className="btn-danger btn-mini"
-                  aria-label={`Cancel order ${o.order_number}`}
+                  aria-label={`Discard order ${o.order_number}`}
                   onClick={() => cancelWaitingOrder(o)}
                 >
-                  ✕
+                  Discard
                 </button>
               </div>
             ))}
@@ -699,6 +710,7 @@ export default function CashierView() {
                     </button>
                   ))}
                 </div>
+                <MiniCalculator onUse={(value) => setCashReceived(value)} />
                 <div className={`cash-change ${receivedCents > 0 && changeCents < 0 ? 'short' : ''}`}>
                   {receivedCents === 0
                     ? 'Enter the cash received'

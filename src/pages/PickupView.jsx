@@ -3,14 +3,7 @@ import { supabase } from '../lib/supabaseClient.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 
 const STATION_ORDER = ['ytf', 'hotfood', 'beverage']
-const STATION_LABEL = { ytf: 'YTF', hotfood: 'Hot food', beverage: 'Drinks' }
-
-function itemStatusLabel(status) {
-  if (status === 'picked_up') return 'picked up'
-  if (status === 'ready') return 'ready'
-  if (status === 'cancelled') return 'cancelled'
-  return 'preparing'
-}
+const STATION_LABEL = { ytf: 'YTF', hotfood: 'Hot food', beverage: 'Drink' }
 
 export default function PickupView() {
   const [orders, setOrders] = useState([])
@@ -121,24 +114,15 @@ export default function PickupView() {
     loadDone()
   }
 
-  async function toggleStation(group) {
-    const allPicked = group.items.every((i) => i.status === 'picked_up')
-    if (allPicked) {
-      if (!window.confirm(`Mark the ${group.label} items as NOT picked up? They will go back to Ready.`)) return
-      await setItemsStatus(group.items.map((i) => i.id), 'ready')
-    } else {
-      await setItemsStatus(group.items.filter((i) => i.status === 'ready').map((i) => i.id), 'picked_up')
-    }
+  async function handOverReady(readyItems) {
+    if (readyItems.length === 0) return
+    if (!window.confirm(`Hand over the ready items of order #${selected.order_number} to the customer?`)) return
+    await setItemsStatus(readyItems.map((i) => i.id), 'picked_up')
   }
 
-  async function toggleOrder(liveItems) {
-    const allPicked = liveItems.every((i) => i.status === 'picked_up')
-    if (allPicked) {
-      if (!window.confirm(`Mark order #${selected.order_number} as NOT picked up? Everything goes back to Ready.`)) return
-      await setItemsStatus(liveItems.map((i) => i.id), 'ready')
-    } else {
-      await setItemsStatus(liveItems.filter((i) => i.status === 'ready').map((i) => i.id), 'picked_up')
-    }
+  async function undoHandover(pickedItems) {
+    if (!window.confirm(`Put the collected items of order #${selected.order_number} back to Ready?`)) return
+    await setItemsStatus(pickedItems.map((i) => i.id), 'ready')
   }
 
   async function recallOrder() {
@@ -161,8 +145,23 @@ export default function PickupView() {
 
   const isCancelled = selected?.payment_status === 'cancelled'
   const liveItems = items.filter((i) => i.status !== 'cancelled')
-  const orderAllPicked = liveItems.length > 0 && liveItems.every((i) => i.status === 'picked_up')
-  const orderAnyCooking = liveItems.some((i) => i.status === 'queued' || i.status === 'cooking')
+  const readyItems = liveItems.filter((i) => i.status === 'ready')
+  const pickedItems = liveItems.filter((i) => i.status === 'picked_up')
+  const anyCooking = liveItems.some((i) => i.status === 'queued' || i.status === 'cooking')
+  const allPicked = liveItems.length > 0 && pickedItems.length === liveItems.length
+
+  let stateLabel = 'Preparing'
+  let stateClass = ''
+  if (allPicked) {
+    stateLabel = 'Completed'
+    stateClass = 'completed'
+  } else if (readyItems.length > 0 && anyCooking) {
+    stateLabel = 'Partly ready'
+    stateClass = 'partial'
+  } else if (readyItems.length > 0) {
+    stateLabel = 'Ready for pickup'
+    stateClass = 'ready'
+  }
 
   const bySlug = {}
   for (const item of liveItems) {
@@ -236,14 +235,14 @@ export default function PickupView() {
         <div className="ticket-group pickup-detail">
           {isCancelled ? (
             <>
-              <h2>
-                Order #{selected.order_number}
+              <div className="pickup-order-header">
+                <h2>Order #{selected.order_number}</h2>
                 <span className="cancelled-tag">Cancelled</span>
-              </h2>
+              </div>
               {selected.cancel_reason && <p className="availability-state">Reason: {selected.cancel_reason}</p>}
-              <ul className="ticket-list">
+              <ul className="pickup-item-list">
                 {items.map((item) => (
-                  <li key={item.id} className="ticket ticket-cancelled">
+                  <li key={item.id} className="pickup-item pickup-item-cancelled">
                     {item.menu_items?.name} x{item.quantity}
                   </li>
                 ))}
@@ -251,50 +250,37 @@ export default function PickupView() {
             </>
           ) : (
             <>
-              <label className="order-ready-check">
-                <input
-                  type="checkbox"
-                  checked={orderAllPicked}
-                  disabled={orderAnyCooking || liveItems.length === 0}
-                  onChange={() => toggleOrder(liveItems)}
-                />
-                Order #{selected.order_number}
-                {orderAllPicked && <span className="availability-state ok"> · Completed</span>}
-              </label>
+              <div className="pickup-order-header">
+                <h2>Order #{selected.order_number}</h2>
+                <span className={`order-state-tag ${stateClass}`}>{stateLabel}</span>
+              </div>
 
-              {orderAllPicked && selected.created_at && (
+              {allPicked && selected.created_at && (
                 <p className="availability-state">
                   Ordered {new Date(selected.created_at).toLocaleString()}
                   {selected.total_amount != null && ` · Total RM ${Number(selected.total_amount).toFixed(2)}`}
                 </p>
               )}
-              {orderAnyCooking && (
-                <p className="availability-state">
-                  Some food is still being prepared. Each station can be ticked once its food is ready.
-                </p>
-              )}
 
               {stationGroups.map((group) => {
-                const allPicked = group.items.every((i) => i.status === 'picked_up')
-                const stillCooking = group.items.some((i) => i.status === 'queued' || i.status === 'cooking')
+                const everyCollected = group.items.every((i) => i.status === 'picked_up')
+                const everyReady = group.items.every((i) => i.status === 'ready' || i.status === 'picked_up')
                 return (
-                  <div key={group.slug} className="pickup-station-group">
-                    <label className="station-ready-check">
-                      <input
-                        type="checkbox"
-                        checked={allPicked}
-                        disabled={stillCooking && !allPicked}
-                        onChange={() => toggleStation(group)}
-                      />
+                  <div key={group.slug}>
+                    <div className="pickup-station-title">
                       {group.label}:
-                    </label>
-                    <ul className="ticket-list">
+                      {everyCollected ? (
+                        <span className="station-state-tag">collected</span>
+                      ) : everyReady ? (
+                        <span className="station-state-tag ok">ready ✓</span>
+                      ) : (
+                        <span className="station-state-tag">preparing…</span>
+                      )}
+                    </div>
+                    <ul className="pickup-item-list">
                       {group.items.map((item) => (
-                        <li key={item.id} className="ticket">
-                          <span>
-                            {item.menu_items?.name} x{item.quantity}
-                          </span>
-                          <span className="item-status-tag">{itemStatusLabel(item.status)}</span>
+                        <li key={item.id} className={`pickup-item pickup-item-${item.status}`}>
+                          {item.menu_items?.name} x{item.quantity}
                         </li>
                       ))}
                     </ul>
@@ -302,14 +288,27 @@ export default function PickupView() {
                 )
               })}
 
-              {selected.board_status === 'preparing' &&
-                (selected.recalled_at ? (
-                  <p className="availability-state ok">Flagged on the board ✓</p>
-                ) : (
-                  <button className="btn-danger" onClick={recallOrder}>
-                    Flag as waiting too long
+              <div className="pickup-actions">
+                {readyItems.length > 0 && (
+                  <button className="btn-primary" onClick={() => handOverReady(readyItems)}>
+                    Hand over ready items
                   </button>
-                ))}
+                )}
+                {pickedItems.length > 0 && (
+                  <button className="btn-separated" onClick={() => undoHandover(pickedItems)}>
+                    Undo handover
+                  </button>
+                )}
+                {selected.board_status === 'preparing' &&
+                  !allPicked &&
+                  (selected.recalled_at ? (
+                    <span className="availability-state ok">Flagged on the board ✓</span>
+                  ) : (
+                    <button className="btn-danger" onClick={recallOrder}>
+                      Flag as waiting too long
+                    </button>
+                  ))}
+              </div>
             </>
           )}
         </div>
