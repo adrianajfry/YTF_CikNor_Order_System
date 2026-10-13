@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient.js'
 import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 import CashierReceiptViewer from '../components/CashierReceiptViewer.jsx'
+import { useCashierReceiptStream } from '../lib/useCashierReceiptStream.js'
 
 const toCents = (value) => Math.round((parseFloat(value) || 0) * 100)
 const formatCents = (cents) => (cents / 100).toFixed(2)
@@ -24,7 +25,8 @@ export default function CashierView() {
   const [submitting, setSubmitting] = useState(false)
   const [lastOrderNumber, setLastOrderNumber] = useState(null)
   const [checkoutSession, setCheckoutSession] = useState(null)
-  const [customerCamLive, setCustomerCamLive] = useState(false)
+  const { stream: customerStream, linkStatus } = useCashierReceiptStream()
+  const customerCamLive = !!customerStream
   const [capturing, setCapturing] = useState(false)
   const [captureNote, setCaptureNote] = useState('')
 
@@ -161,7 +163,14 @@ export default function CashierView() {
           .then(({ data }) => setMenuItems(data ?? []))
       })
       .subscribe()
-    return () => supabase.removeChannel(channel)
+
+    // Safety net: if a live update is ever missed, the payment screen still catches up
+    const poll = setInterval(loadCheckoutSession, 4000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(poll)
+    }
   }, [])
 
   // Once the customer display's photo lands, reset the command
@@ -492,6 +501,9 @@ export default function CashierView() {
 
   const hotFoodItems = menuItems.filter((i) => i.stations?.slug === 'hotfood')
   const beverageItems = menuItems.filter((i) => i.stations?.slug === 'beverage')
+  // An order that is parked in "Held orders" shouldn't also show up under "Waiting from YTF"
+  const heldOrderIds = new Set(heldDrafts.map((d) => d.selectedOrder?.id).filter(Boolean))
+  const visibleLobbyOrders = lobbyOrders.filter((o) => !heldOrderIds.has(o.id))
   const receiptUrl = checkoutSession?.receipt_url ?? null
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
     `DEMO PAYMENT - ${orderLabel} - Total RM${grandTotal.toFixed(2)}`
@@ -508,9 +520,9 @@ export default function CashierView() {
       {!activeMode && (
         <>
           <h2>Waiting from YTF</h2>
-          {lobbyOrders.length === 0 && <p className="empty-note">No orders waiting right now.</p>}
+          {visibleLobbyOrders.length === 0 && <p className="empty-note">No orders waiting right now.</p>}
           <div className="lobby-list">
-            {lobbyOrders.map((o) => (
+            {visibleLobbyOrders.map((o) => (
               <button key={o.id} className="lobby-chip" onClick={() => pickOrder(o)}>
                 #{o.order_number}
               </button>
@@ -615,7 +627,7 @@ export default function CashierView() {
                   )}
                 </div>
 
-                <CashierReceiptViewer onLiveChange={setCustomerCamLive} hidden={!!receiptUrl} />
+                <CashierReceiptViewer stream={customerStream} hidden={!!receiptUrl} />
 
                 {receiptUrl ? (
                   <button onClick={retakePhoto}>Retake receipt photo</button>
@@ -626,7 +638,13 @@ export default function CashierView() {
                         {capturing ? 'Capturing…' : 'Capture receipt'}
                       </button>
                     ) : (
-                      <p className="camera-status-note">Waiting for the customer display camera…</p>
+                      <p className="camera-status-note">
+                        {linkStatus === 'ready' && 'Camera link ready — waiting for the customer display camera…'}
+                        {linkStatus === 'starting' && 'Starting the camera link…'}
+                        {linkStatus === 'taken' &&
+                          'Another cashier screen is already open. Close it so this one can receive the camera.'}
+                        {linkStatus === 'error' && 'Camera link problem — retrying…'}
+                      </p>
                     )}
                     {captureNote && <p className="login-error">{captureNote}</p>}
                   </>

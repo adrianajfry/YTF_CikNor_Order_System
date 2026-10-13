@@ -5,6 +5,7 @@ export function startCaller({ stream, targetId, onStatus }) {
   let peer
   let currentCall
   let retryTimer
+  let stallTimer
   let callSeq = 0
   let isLive = false
   let stopped = false
@@ -16,6 +17,7 @@ export function startCaller({ stream, targetId, onStatus }) {
   function scheduleRetry(message) {
     if (stopped) return
     isLive = false
+    clearTimeout(stallTimer)
     report('connecting', message)
     clearTimeout(retryTimer)
     retryTimer = setTimeout(placeCall, 3000)
@@ -33,6 +35,11 @@ export function startCaller({ stream, targetId, onStatus }) {
       return
     }
 
+    clearTimeout(stallTimer)
+    stallTimer = setTimeout(() => {
+      if (seq === callSeq && !isLive) scheduleRetry('Still connecting — retrying…')
+    }, 12000)
+
     call.on('close', () => {
       if (seq === callSeq) scheduleRetry('Connection closed — retrying…')
     })
@@ -47,6 +54,7 @@ export function startCaller({ stream, targetId, onStatus }) {
         if (seq !== callSeq) return
         if (pc.connectionState === 'connected') {
           isLive = true
+          clearTimeout(stallTimer)
           report('live')
         }
         if (pc.connectionState === 'failed') scheduleRetry('Connection failed — retrying…')
@@ -70,6 +78,7 @@ export function startCaller({ stream, targetId, onStatus }) {
   return function stop() {
     stopped = true
     clearTimeout(retryTimer)
+    clearTimeout(stallTimer)
     if (peer) peer.destroy()
   }
 }
