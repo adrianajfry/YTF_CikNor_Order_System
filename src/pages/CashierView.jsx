@@ -273,6 +273,24 @@ export default function CashierView() {
     setPendingRequests((prev) => new Set(prev).add(item.id))
   }
 
+  async function cancelWaitingOrder(order) {
+    const reason = window.prompt(
+      `Cancel order #${order.order_number}?\nThe kitchen will be told to stop making it.\n\nReason (optional):`,
+      ''
+    )
+    if (reason === null) return // pressed Cancel: keep the order
+
+    const { error } = await supabase.rpc('cashier_cancel_order', {
+      p_order_id: order.id,
+      p_reason: reason,
+    })
+    if (error) {
+      alert(`Could not cancel order #${order.order_number}: ${error.message}`)
+      return
+    }
+    await loadLobby()
+  }
+
   const cartTotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
   const grandTotal = Math.round((existingTotal + cartTotal) * 100) / 100
   const dueCents = toCents(grandTotal)
@@ -523,9 +541,18 @@ export default function CashierView() {
           {visibleLobbyOrders.length === 0 && <p className="empty-note">No orders waiting right now.</p>}
           <div className="lobby-list">
             {visibleLobbyOrders.map((o) => (
-              <button key={o.id} className="lobby-chip" onClick={() => pickOrder(o)}>
-                #{o.order_number}
-              </button>
+              <div key={o.id} className="lobby-chip-wrap">
+                <button className="lobby-chip" onClick={() => pickOrder(o)}>
+                  #{o.order_number}
+                </button>
+                <button
+                  className="btn-danger btn-mini"
+                  aria-label={`Cancel order ${o.order_number}`}
+                  onClick={() => cancelWaitingOrder(o)}
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
 

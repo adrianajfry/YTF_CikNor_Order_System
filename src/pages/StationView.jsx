@@ -15,6 +15,7 @@ export default function StationView({ stationSlug: stationSlugProp }) {
   const [requests, setRequests] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [loadingItems, setLoadingItems] = useState(true)
+  const [cancelledNotices, setCancelledNotices] = useState([])
   const [availabilitySearch, setAvailabilitySearch] = useState('')
 
   useEffect(() => {
@@ -40,6 +41,25 @@ export default function StationView({ stationSlug: stationSlugProp }) {
       .order('status_updated_at')
     setItems(data ?? [])
     setLoadingItems(false)
+
+    // Orders cancelled in the last 15 minutes: tell the kitchen to stop making them
+    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    const { data: cancelled } = await supabase
+      .from('order_items')
+      .select('id, order_id, quantity, orders(order_number), menu_items(name)')
+      .eq('station_id', id)
+      .eq('status', 'cancelled')
+      .gte('status_updated_at', since)
+      .order('status_updated_at', { ascending: false })
+
+    const byOrder = {}
+    for (const row of cancelled ?? []) {
+      if (!byOrder[row.order_id]) {
+        byOrder[row.order_id] = { orderId: row.order_id, orderNumber: row.orders?.order_number, items: [] }
+      }
+      byOrder[row.order_id].items.push(`${row.menu_items?.name} x${row.quantity}`)
+    }
+    setCancelledNotices(Object.values(byOrder))
   }
 
   async function loadRequests(id) {
@@ -192,6 +212,17 @@ export default function StationView({ stationSlug: stationSlugProp }) {
       <StaffHeader title={`${stationName} station`} />
       <h1>{stationName} station</h1>
       <Link to={`/station/${stationSlug}/history`} className="history-link">View order history →</Link>
+
+      {cancelledNotices.length > 0 && (
+        <div className="cancel-notice">
+          {cancelledNotices.map((n) => (
+            <div key={n.orderId}>
+              <strong>Order #{n.orderNumber} was cancelled — stop preparing it.</strong>
+              <div>{n.items.join(', ')}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loadingItems ? (
         <div className="ticket-groups">
