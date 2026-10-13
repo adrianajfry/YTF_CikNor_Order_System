@@ -15,6 +15,7 @@ export default function CustomerDisplayView() {
   const streamRef = useRef(null)
   const stopCallerRef = useRef(null)
   const startingRef = useRef(false)
+  const startSeqRef = useRef(0)
   const wantsCameraRef = useRef(false)
   const lastCommandRef = useRef('idle')
 
@@ -39,12 +40,20 @@ export default function CustomerDisplayView() {
         loadSession
       )
       .subscribe()
-    return () => supabase.removeChannel(channel)
+
+    // Safety net: if a live update is ever missed, this screen still catches up within seconds
+    const poll = setInterval(loadSession, 4000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(poll)
+    }
   }, [])
 
   async function startCamera() {
     if (streamRef.current || startingRef.current) return
     startingRef.current = true
+    const seq = ++startSeqRef.current
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -56,8 +65,8 @@ export default function CustomerDisplayView() {
         audio: false,
       })
 
-      // The payment may have ended while the permission prompt was open
-      if (!wantsCameraRef.current) {
+      // The payment may have ended (or restarted) while the permission prompt was open
+      if (seq !== startSeqRef.current || !wantsCameraRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
       }
@@ -76,12 +85,14 @@ export default function CustomerDisplayView() {
         },
       })
     } catch (err) {
-      console.error('Could not open camera:', err)
-      setCamStatus('error')
-      setCamDetail(err.message || 'Could not open the camera')
-      setNeedsTap(true)
+      if (seq === startSeqRef.current) {
+        console.error('Could not open camera:', err)
+        setCamStatus('error')
+        setCamDetail(err.message || 'Could not open the camera')
+        setNeedsTap(true)
+      }
     } finally {
-      startingRef.current = false
+      if (seq === startSeqRef.current) startingRef.current = false
     }
   }
 
@@ -99,10 +110,24 @@ export default function CustomerDisplayView() {
   // This also reopens it after the cashier presses Retake.
   useEffect(() => {
     wantsCameraRef.current = wantsCamera
-    if (wantsCamera) startCamera()
-    else if (streamRef.current) stopCamera()
+    if (wantsCamera) {
+      startCamera()
+    } else {
+      startSeqRef.current++ // forget any start still waiting on a permission prompt
+      startingRef.current = false
+      if (streamRef.current) stopCamera()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantsCamera])
+
+  // When a payment ends (finished or cancelled), wipe any leftover on-screen state
+  useEffect(() => {
+    if (session && session.status !== 'awaiting_payment') {
+      setSaving(false)
+      setNotice('')
+      setNeedsTap(false)
+    }
+  }, [session?.status])
 
   useEffect(() => {
     if (session?.receipt_url) setNotice('')
@@ -132,7 +157,7 @@ export default function CustomerDisplayView() {
         const fail = (message) => {
           setNotice(message)
           setSaving(false)
-          startCamera() // bring the camera back so the cashier can try again
+          if (wantsCameraRef.current) startCamera() // bring the camera back so the cashier can try again
         }
 
         if (!blob) {

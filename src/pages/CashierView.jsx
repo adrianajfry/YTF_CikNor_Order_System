@@ -166,8 +166,11 @@ export default function CashierView() {
 
   // Once the customer display's photo lands, reset the command
   useEffect(() => {
+    async function resetCommand() {
+      await supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
+    }
     if (checkoutSession?.camera_command?.startsWith('capture') && checkoutSession?.receipt_url) {
-      supabase.from('checkout_sessions').update({ camera_command: 'idle' }).eq('id', 'current')
+      resetCommand()
     }
   }, [checkoutSession?.camera_command, checkoutSession?.receipt_url])
 
@@ -319,15 +322,26 @@ export default function CashierView() {
   }
 
   async function cancelPayment() {
-    await supabase
-      .from('checkout_sessions')
-      .update({ status: 'idle', payment_method: 'qr', receipt_url: null, camera_command: 'idle' })
-      .eq('id', 'current')
+    const hasReceipt = !!checkoutSession?.receipt_url
+    const question = hasReceipt
+      ? 'Cancel this payment and discard the captured receipt? The customer screen will reset.'
+      : 'Cancel this payment? The customer screen will reset.'
+    if (!window.confirm(question)) return
+
+    // Reset this screen straight away, then tell the customer display
     setPaymentMethod('qr')
     setCashReceived('')
     setCapturing(false)
     setCaptureNote('')
     setPaymentStage('building')
+
+    const { error } = await supabase
+      .from('checkout_sessions')
+      .update({ status: 'idle', payment_method: 'qr', receipt_url: null, camera_command: 'idle' })
+      .eq('id', 'current')
+    if (error) {
+      alert(`The customer screen could not be reset: ${error.message}`)
+    }
   }
 
   async function takePhoto() {
@@ -343,8 +357,15 @@ export default function CashierView() {
     }
   }
 
-  function retakePhoto() {
-    supabase.from('checkout_sessions').update({ receipt_url: null, camera_command: 'idle' }).eq('id', 'current')
+  async function retakePhoto() {
+    setCaptureNote('')
+    // Clear the old receipt on this screen straight away
+    setCheckoutSession((prev) => (prev ? { ...prev, receipt_url: null } : prev))
+    const { error } = await supabase
+      .from('checkout_sessions')
+      .update({ receipt_url: null, camera_command: 'idle' })
+      .eq('id', 'current')
+    if (error) setCaptureNote(`Could not start a retake: ${error.message}`)
   }
 
   async function submitOrder() {
