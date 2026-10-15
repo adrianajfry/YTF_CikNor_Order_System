@@ -5,7 +5,7 @@ import { getNextOrderNumber } from '../lib/nextOrderNumber.js'
 import StaffHeader from '../components/StaffHeader.jsx'
 import CashierReceiptViewer from '../components/CashierReceiptViewer.jsx'
 import { useCashierReceiptStream } from '../lib/useCashierReceiptStream.js'
-import MiniCalculator from '../components/MiniCalculator.jsx'
+import NumberKeypad from '../components/NumberKeypad.jsx'
 
 const toCents = (value) => Math.round((parseFloat(value) || 0) * 100)
 const formatCents = (cents) => (cents / 100).toFixed(2)
@@ -690,18 +690,21 @@ export default function CashierView() {
               </div>
             ) : (
               <div className="payment-cash">
-                <label>
-                  Cash received (RM)
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.05"
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </label>
+                <div className="cash-display">
+                  <span className="cash-display-label">Cash received (RM)</span>
+                  <span className="cash-display-value">{cashReceived || '0'}</span>
+                </div>
+
+                <div className={`cash-change ${receivedCents > 0 && changeCents < 0 ? 'short' : ''}`}>
+                  {receivedCents === 0
+                    ? 'Enter the cash received'
+                    : changeCents >= 0
+                    ? `Change: RM ${formatCents(changeCents)}`
+                    : `Short by RM ${formatCents(-changeCents)}`}
+                </div>
+
+                <NumberKeypad value={cashReceived} onChange={setCashReceived} />
+
                 <div className="cash-quick">
                   <button onClick={() => setCashReceived(formatCents(dueCents))}>Exact</button>
                   {[5, 10, 20, 50, 100].map((note) => (
@@ -709,14 +712,6 @@ export default function CashierView() {
                       RM {note}
                     </button>
                   ))}
-                </div>
-                <MiniCalculator onUse={(value) => setCashReceived(value)} />
-                <div className={`cash-change ${receivedCents > 0 && changeCents < 0 ? 'short' : ''}`}>
-                  {receivedCents === 0
-                    ? 'Enter the cash received'
-                    : changeCents >= 0
-                    ? `Change: RM ${formatCents(changeCents)}`
-                    : `Short by RM ${formatCents(-changeCents)}`}
                 </div>
               </div>
             )}

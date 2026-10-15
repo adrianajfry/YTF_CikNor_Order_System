@@ -324,3 +324,19 @@ button:disabled {
 .mini-calc-grid button { padding: 12px 0; font-size: 18px; }
 .mini-calc-actions { display: flex; gap: 10px; }
 .mini-calc-actions .btn-primary { flex: 1; }
+.cash-display {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 10px 16px;
+  border: 2px solid #1d9e75;
+  border-radius: 12px;
+  background: #fff;
+  margin-bottom: 8px;
+}
+.cash-display-label { font-size: 13px; color: #888; }
+.cash-display-value { font-size: 34px; font-weight: 700; min-height: 42px; }
+
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; max-width: 300px; }
+.keypad button { padding: 16px 0; font-size: 22px; touch-action: manipulation; user-select: none; }
+.keypad-clear { grid-column: 1 / -1; font-size: 16px; }
